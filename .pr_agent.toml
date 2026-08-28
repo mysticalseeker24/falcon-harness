@@ -1,0 +1,30 @@
+# Qodo Merge configuration for falcon-harness.
+# Minimal by design — only settings we actually use. Do not paste the full default config.
+# Exactly ONE provider section (GitHub App). Do not add gitlab/bitbucket/azure sections.
+
+[github_app]
+# Commands Qodo runs automatically when a PR is opened or updated.
+pr_commands = [
+    "/describe",
+    "/review",
+]
+
+[pr_reviewer]
+# Focus the reviewer on what matters for a security product; style is handled by ESLint/Prettier.
+require_score_review = true
+require_tests_review = true
+inline_code_comments = true
+num_code_suggestions = 4
+extra_instructions = """
+This is a security product built for a hackathon. Prioritize, in order:
+1. Any secret, key, token, or credential present in the diff (flag as highest severity).
+2. Missing or swallowed error handling on external calls (model, sandbox, GitHub, DB, R2).
+3. Code that treats an API returning 200 as success without verifying the intended effect.
+4. Non-parameterized SQL or any interpolation of untrusted input (diff text) into queries/shells.
+5. Logic errors in the hash-chain ledger (inconsistent canonicalization, in-place mutation of sealed rows).
+Do NOT comment on formatting or style; linters handle that.
+"""
+
+[pr_code_suggestions]
+# Keep suggestions actionable and few.
+num_code_suggestions = 4
