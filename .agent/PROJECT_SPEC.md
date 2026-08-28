@@ -23,7 +23,7 @@ TrueForge is the harness: it runs the agent loop, dispatches subagents, provisio
 We author exactly four things:
 1. **`attesta-mcp`** — an MCP server exposing three tools (`scope_surface`, `seal_evidence`, `verify_ledger`).
 2. **`SKILL.md`** — the broken-access-control exploitation playbook the agent loads on demand.
-3. **`vulnbank`** — the deliberately-vulnerable target fixture (separate repo, under DevLabs-mgc org).
+3. **`vulnbank`** — the deliberately-vulnerable target fixture (separate repo, under DevLab-mgc org).
 4. **The dashboard** — Next.js, the Best UI surface, drives TrueForge via its SDK.
 
 Everything else (sandbox, approvals, subagents, session persistence, model switching) is TrueForge, configured through its UI/YAML catalogs. See `TOOLS.md` for exactly how each is wired.
@@ -57,7 +57,7 @@ Everything else (sandbox, approvals, subagents, session persistence, model switc
 | Repo | Role | PRs | Where |
 |---|---|---|---|
 | `mysticalseeker24/falcon-harness` | our agent code: MCP server, SKILL, dashboard, bench, docs | **our** PRs, reviewed **by Qodo** | exists, MIT |
-| `DevLabs-mgc/vulnbank` | the vulnerable target app | the PRs **Falcon scans** | create fresh |
+| `DevLab-mgc/vulnbank` | the vulnerable target app | the PRs **Falcon scans** | create fresh |
 | TrueForge | the harness | — | run from npm / Docker |
 
 `falcon-harness` PRs are the Q Branch evidence trail. `vulnbank` PRs are the product demo input. **Never conflate them.** Both created inside the Aug 24–30 window (rule 8): confirm `falcon-harness` initial commit is scaffold-only with no substantial pre-window code.

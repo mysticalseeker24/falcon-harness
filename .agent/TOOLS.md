@@ -115,7 +115,7 @@ Main agent family ≠ auditor family, always. DeepSeek (main) vs OpenAI (auditor
 
 ## 5. GitHub MCP — read PR, comment, merge
 
-- Added as an MCP server in TrueForge (catalog or by URL). Auth: a GitHub token scoped to the `DevLabs-mgc/vulnbank` repo (and the falcon-harness repo if needed), stored in the harness, never in code.
+- Added as an MCP server in TrueForge (catalog or by URL). Auth: a GitHub token scoped to the `DevLab-mgc/vulnbank` repo (and the falcon-harness repo if needed), stored in the harness, never in code.
 - Tools used: read PR diff, post PR comment, **merge PR**.
 - **Mark merge as requiring human approval** (TrueForge tool-approval checkpoint). This is the gate. The comment tool does not require approval; only merge does.
 
