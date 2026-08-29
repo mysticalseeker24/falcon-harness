@@ -1,0 +1,23 @@
+{
+  "name": "attesta-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Falcon's MCP server: scope_surface, seal_evidence, verify_ledger.",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "express": "5.2.1",
+    "zod": "4.5.2"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/node": "26.4.0",
+    "tsx": "4.23.12",
+    "typescript": "7.0.2"
+  }
+}
