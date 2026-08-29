@@ -49,7 +49,11 @@ function middlewareArgs(tail: string): string {
 }
 
 function describeHandler(tail: string): string {
-  const beforeArrow = tail.split("=>")[0].replace(/[,{(\s]+$/, "").trim();
+  const beforeArrow = tail
+    .split("=>")[0]
+    .replace(/^[\s,]+/, "") // leading comma between path and handler
+    .replace(/[,{(\s]+$/, "")
+    .trim();
   if (beforeArrow === "" || beforeArrow.startsWith("(")) return "inline";
   return beforeArrow;
 }

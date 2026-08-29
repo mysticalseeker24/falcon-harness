@@ -6,8 +6,8 @@ confirmed in spike 01). Three tools are planned:
 | Tool | Status | Purpose |
 |---|---|---|
 | `scope_surface(diff)` | **implemented** | new HTTP routes a PR introduces + whether each has auth |
-| `seal_evidence(finding)` | planned | append a hash-chained entry to the ledger + store the artifact |
-| `verify_ledger()` | planned | recompute the chain and re-read artifact bytes |
+| `seal_evidence(finding)` | **implemented** | append a hash-chained entry to the ledger + store the artifact |
+| `verify_ledger()` | **implemented** | recompute the chain and re-read artifact bytes |
 
 ## Run
 
@@ -46,3 +46,32 @@ Reads the **added** lines of a unified diff and returns the new Express route re
 position, not inside a comment or string) with method + path on that line; middleware split across
 separate lines is not followed. The diff is treated as untrusted input — size-bounded, never
 executed, never interpolated into any sink.
+
+## `seal_evidence(finding) -> { entry_hash }`
+
+Appends a hash-chained entry to the ledger and stores the request/response artifact
+content-addressed. `Authorization`/`Cookie`/`x-api-key` header values are redacted before anything
+is stored or hashed.
+
+Hashing contract (one function, `lib/canonicalJson.ts` + `lib/hash.ts`):
+
+```
+entry_hash = sha256( canonical_json(entry without entry_hash) + prev_hash )
+genesis prev_hash = "0" * 64
+artifact_key       = sha256(artifact bytes)   # content-addressed
+```
+
+## `verify_ledger() -> { valid, length, broken_at }`
+
+Recomputes the chain from genesis **and re-reads + re-hashes each artifact's bytes** — it never
+trusts the stored row. `broken_at` is the id of the first tampered entry (or `null`). A mutated
+ledger row, a mutated artifact, or a missing artifact all fail verification.
+
+## Storage
+
+Behind `LedgerStore` / `ArtifactStore` interfaces (`src/storage`). The **local filesystem backend
+is the default and the tested path** — a JSON-lines ledger at `ATTESTA_LEDGER_PATH` and
+content-addressed blobs under `ATTESTA_ARTIFACT_DIR` (both under `attesta-mcp/data/`, gitignored).
+The deployed demo swaps in Postgres (ledger) + Cloudflare R2 (artifacts) adapters behind the same
+interfaces when `DATABASE_URL` / `R2_*` are set (follow-up; not wired yet, so nothing unverified is
+presented as working).

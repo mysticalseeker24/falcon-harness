@@ -37,6 +37,7 @@ test("vuln diff: one new route, auth absent, correct method/path/line", () => {
   assert.equal(r.method, "GET");
   assert.equal(r.path, "/admin/balances");
   assert.equal(r.auth_present, false);
+  assert.equal(r.handler, "inline");
   assert.equal(r.source_line, 21);
 });
 
