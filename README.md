@@ -24,6 +24,23 @@ One vulnerability class (broken access control on new endpoints), one language (
 
 _[fill as built: MCP tools registered, SKILL.md loaded, Daytona sandbox, subagent auditor, human-approval checkpoint on merge, session persistence]_
 
+## Spike results (PR 1)
+
+Three empirical unknowns from `.agent/PROJECT_SPEC.md` §10, de-risked with throwaway spike code
+under [`spikes/`](./spikes) (deleted before PR 2). Fill each row after running the spike; if a
+primary path fails, take the named fallback and note it here.
+
+| # | Unknown | Result | Decision / fallback taken | Date |
+|---|---|---|---|---|
+| 1 | Custom MCP server registers + one tool call round-trips | **PASS** | Streamable HTTP; registered as `mcp-ping`, harness discovered the tool, agent invoked it and got `pong`/echo/timestamp. No fallback needed. | 2026-08-29 |
+| 2 | One Daytona sandbox boots the app **and** probes it on localhost | **PASS** | Single sandbox: agent wrote the app, booted it, and read `/data` (200, secret) via both curl and a self-generated Node probe on localhost. No Render fallback. **Note:** base image ships no Node — agent installed Node 22.14 itself; real vulnbank boot must install Node in-sandbox (or use a Node image). | 2026-08-29 |
+| 3 | Dashboard reads + actions a pending approval over the TrueForge SDK | **PASS** | Proven **through `@truefoundry/trueforge-sdk`**: `client.sessions.create` + `createTurn` paused on `tool.approval_required`, read `threadId`/`toolCallId`, then `createTurn` with a `user.tool_approval` `allow` item resumed the agent. No `request_human_approval` fallback. Endpoints the SDK wraps: TOOLS.md §6. | 2026-08-29 |
+
+Fallbacks (from the spec): (1) if Streamable-HTTP registration fails, match the transport
+TrueForge's own MCP example uses (SSE or stdio); (2) if one sandbox can't both boot and probe,
+deploy the target to a Render URL and probe that; (3) if the SDK can't read/action approvals, add
+a `request_human_approval(summary)` MCP tool the dashboard flips via a DB flag.
+
 ## Run it
 
 _[setup steps a stranger can follow — filled as built]_
