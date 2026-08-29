@@ -59,24 +59,23 @@ In the Daytona sandbox, get `vulnbank` running on `localhost:3000`:
   If it does not — non-200, wrong body, or it never comes up within a bounded wait — the run is
   **INCONCLUSIVE**; fix the boot or stop and report. Never probe an app you did not confirm is up.
 
-### 3. Probe each candidate route — generate the probe, run it in the sandbox
-For each candidate route, **write a small probe yourself and run it inside the sandbox** (do not use
-a pre-written probe from the repo). Requirements for every generated request:
-- **Set a finite timeout** (a few seconds) on each request. A request must never hang.
-- **Capture the full request**: method, the **full URL** (e.g. `http://localhost:3000/admin/balances`),
-  redacted headers, and the request body (or an explicit `null`).
-- **Capture the full response**: status, headers, and body.
-- **Handle transport failures explicitly.** A connection error, a timeout, or a response you cannot
-  parse is a **testing failure for that route → INCONCLUSIVE**. Record what happened; never guess a
-  verdict from a failed request.
+### 3. Probe each candidate route — generate the probes, run them in the sandbox
+For each candidate route, **write small probes yourself and run them inside the sandbox** (do not use
+a pre-written probe from the repo). Build a **set of probes**; each probe is a structured object:
+- `label` — a short name (e.g. `"no-token"`).
+- `auth_context` — who called: `unauthenticated` / `wrong-tenant` / `non-admin` / `authorized`.
+- `expected` — what correct access control SHOULD do for that caller: `deny` or `allow`.
+- `request` — a **complete** exchange: `method`, full `url`, `headers`, and `body` (use `null` if none).
+- `response` — `status`, `headers`, and `body` (use `null` if none).
 
-Run the checks that fit the route, against the baseline that correct access control rejects (`401`/
-`403`):
-  a. **No credentials** — no `Authorization` header. `2xx` + a data body ⇒ missing authentication.
-  b. **Wrong tenant** — a valid token for a *different* tenant than the data's owner. Another
-     tenant's data returned ⇒ cross-tenant leak.
-  c. **Wrong role** — if the route is admin-only, a valid *non-admin* token. `2xx` + data ⇒ missing
-     role enforcement.
+Requirements: **set a finite timeout** on each request (never hang); a connection error / timeout /
+unparseable response is a **testing failure → INCONCLUSIVE** (never guess a verdict from it).
+
+Run the probes that fit the route:
+  a. **No credentials** (`expected: deny`) — no `Authorization`. `2xx` + data ⇒ missing authentication.
+  b. **Wrong tenant** (`expected: deny`) — a token for a *different* tenant. Another tenant's data ⇒ leak.
+  c. **Wrong role** (`expected: deny`) — for an admin route, a *non-admin* token. `2xx` + data ⇒ missing role check.
+  d. Optionally an **authorized** probe (`expected: allow`) to show the route works for the right caller.
 
 ### 4. Decide the verdict — three outcomes
 - **EXPLOITED** — a probe returned data it should not have, and you captured the request + response
@@ -88,17 +87,16 @@ Run the checks that fit the route, against the baseline that correct access cont
   a connection error/timeout/unparseable response, or coverage was incomplete. **INCONCLUSIVE is
   never treated as CLEAN.**
 
-### 5. Independent audit — do not skip
-For an `EXPLOITED` or `CLEAN` finding, hand it (verdict, captured request, response, status) to the
-**auditor subagent**. Do **not** seal or post anything until it returns `auditor_ok == true`. You
-are never your own verifier.
+### 5. Independent audit + seal (one step — you never rubber-stamp yourself)
+Before sealing, **re-run the decisive probe once more** so the evidence is freshly executed. Then, for
+an `EXPLOITED` or `CLEAN` verdict, call **`seal_evidence`** with the target repo, PR number, route,
+verdict, and the full **`probes`** set. `seal_evidence` **independently audits the probes on a
+different model family and only seals if that audit passes** — the audit runs inside the server, so
+you cannot approve your own finding. It returns the `entry_hash` on success, or an **error** if the
+audit did not pass — treat that error as **INCONCLUSIVE** (do not post a verdict). **Do not seal an
+INCONCLUSIVE run.**
 
-### 6. Seal the evidence
-After `auditor_ok`, for an `EXPLOITED` or `CLEAN` verdict only: call **`seal_evidence(finding)`**
-with the target repo, PR number, route, verdict, redacted request (method, full URL, headers, body),
-response, and `auditor_ok`. Record the returned `entry_hash`. **Do not seal an INCONCLUSIVE run.**
-
-### 7. Act on the verdict
+### 6. Act on the verdict
 - **EXPLOITED** — block the merge and post the captured request + response as a PR comment (the
   proof). Do not merge.
 - **CLEAN** — propose the merge, then **STOP and wait for human approval**. Never bypass the
