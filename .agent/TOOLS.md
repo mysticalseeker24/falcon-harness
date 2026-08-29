@@ -128,11 +128,11 @@ Main agent family ≠ auditor family, always. DeepSeek (main) vs OpenAI (auditor
 
 ## 6. The approval gate — native vs fallback
 
-- **Native path — CONFIRMED (2026-08-29, spike 03), use this.** An external client reads and actions approvals over the HTTP API (`@truefoundry/trueforge-sdk` wraps the same endpoints). Exact flow:
-  - Mark tools approval-gated per MCP server with `require_approval_for_tools` (`@all` / `@write` / `@destructive` / literal names; default `["@write","@destructive"]`). The GitHub **merge** tool is our gate.
-  - When the agent calls a gated tool, the turn ends with a `tool.approval_required` event carrying `thread_id` + `tool_calls[].id` (also in the turn's `pending_actions` and `/api/v1/sessions/{id}/turns/{turn_id}/events`).
-  - Resume by POSTing a new turn whose input is `{ type:"user.tool_approval", thread_id, tool_call_id, approval:{ status:"allow"|"deny" } }` to `/api/v1/sessions/{id}/turns`.
-  - The dashboard renders the blocking card from the `tool.approval_required` state and calls the resume for Approve/Reject. Reference driver: `spikes/03-approval-sdk/approval-roundtrip.mjs`.
+- **Native path — CONFIRMED (2026-08-29, spike 03) through `@truefoundry/trueforge-sdk`, use this.** The dashboard reads and actions approvals via the SDK client (`client.sessions.*`); the raw endpoints it wraps are given below. Exact flow:
+  - Mark tools approval-gated per MCP server with `requireApprovalForTools` / `require_approval_for_tools` (`@all` / `@write` / `@destructive` / literal names; default `["@write","@destructive"]`). The GitHub **merge** tool is our gate.
+  - When the agent calls a gated tool, the turn ends with a `tool.approval_required` event carrying `threadId` + `toolCalls[].id` (also in the turn's `pending_actions` and `client.sessions.listTurnEvents` / `GET /api/v1/sessions/{id}/turns/{turn_id}/events`).
+  - Resume via `client.sessions.createTurn(sessionId, { input:[{ type:"user.tool_approval", threadId, toolCallId, approval:{ status:"allow"|"deny" } }] })` (raw: POST `/api/v1/sessions/{id}/turns`).
+  - The dashboard renders the blocking card from the `tool.approval_required` state and calls the resume for Approve/Reject. Reference driver: `spikes/03-approval-sdk/approval-roundtrip-sdk.mjs` (SDK); SDK surface mapped in `introspect-sdk.mjs`.
 - **Fallback (NOT needed):** an MCP tool `request_human_approval(summary) -> {approved}` blocking on a DB flag. Kept only as a note; the native resume works.
 
 ---

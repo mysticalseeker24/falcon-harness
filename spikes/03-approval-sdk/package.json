@@ -1,0 +1,14 @@
+{
+  "name": "spike-approval-sdk",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "THROWAWAY spike: drive session -> pending approval -> allow -> resume through @truefoundry/trueforge-sdk to test SDK actionability (PROJECT_SPEC §10.1).",
+  "scripts": {
+    "introspect": "node introspect-sdk.mjs",
+    "start": "node approval-roundtrip-sdk.mjs"
+  },
+  "dependencies": {
+    "@truefoundry/trueforge-sdk": "0.1.3"
+  }
+}
