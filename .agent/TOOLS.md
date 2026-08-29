@@ -128,9 +128,12 @@ Main agent family ≠ auditor family, always. DeepSeek (main) vs OpenAI (auditor
 
 ## 6. The approval gate — native vs fallback
 
-- **Native path (preferred):** TrueForge tool-approval pauses the run on the merge call; the dashboard reads the pending-approval state over `@truefoundry/trueforge-sdk` and renders the blocking card; Approve resumes the session and the merge fires.
-- **Fallback (if SDK approval state is awkward):** an MCP tool `request_human_approval(summary: string) -> {approved: boolean}` that blocks until the dashboard flips a flag (a row in Postgres the dashboard writes). The skill calls it before merge on the clean path.
-- Decide which in the hour-1 spike (unknown #1). Either satisfies the control-and-safety criterion.
+- **Native path — CONFIRMED (2026-08-29, spike 03), use this.** An external client reads and actions approvals over the HTTP API (`@truefoundry/trueforge-sdk` wraps the same endpoints). Exact flow:
+  - Mark tools approval-gated per MCP server with `require_approval_for_tools` (`@all` / `@write` / `@destructive` / literal names; default `["@write","@destructive"]`). The GitHub **merge** tool is our gate.
+  - When the agent calls a gated tool, the turn ends with a `tool.approval_required` event carrying `thread_id` + `tool_calls[].id` (also in the turn's `pending_actions` and `/api/v1/sessions/{id}/turns/{turn_id}/events`).
+  - Resume by POSTing a new turn whose input is `{ type:"user.tool_approval", thread_id, tool_call_id, approval:{ status:"allow"|"deny" } }` to `/api/v1/sessions/{id}/turns`.
+  - The dashboard renders the blocking card from the `tool.approval_required` state and calls the resume for Approve/Reject. Reference driver: `spikes/03-approval-sdk/approval-roundtrip.mjs`.
+- **Fallback (NOT needed):** an MCP tool `request_human_approval(summary) -> {approved}` blocking on a DB flag. Kept only as a note; the native resume works.
 
 ---
 

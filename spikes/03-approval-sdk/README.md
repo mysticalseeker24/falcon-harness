@@ -1,49 +1,43 @@
-# Spike 03 — dashboard reads + actions a pending approval over the SDK
+# Spike 03 — dashboard reads + actions a pending approval
 
-**Unknown (PROJECT_SPEC §10.1 / §8, TOOLS.md §6):** can a client (the future dashboard) read the
-pending-approval state and approve it over `@truefoundry/trueforge-sdk`? This decides the
-highest-value 90 seconds of the demo — a **native approval card** vs a fallback tool.
+**Unknown (PROJECT_SPEC §10.1 / §8):** can an external client (the dashboard) read a pending
+approval and approve/deny it? **Answered YES — native path**, driven over the TrueForge HTTP API
+(the same endpoints `@truefoundry/trueforge-sdk` wraps). No `request_human_approval` fallback needed.
 
-> The exact SDK method names are not documented here on purpose. `spike.mjs` **introspects** the
-> SDK (prints its exports and client methods) and then tries a guarded best-guess flow. Use the
-> printed surface, the harness API docs at `http://localhost:8790/api/v1/docs`, and the SDK docs at
-> trueforge.dev to confirm the real names. (`@truefoundry/trueforge-sdk` pinned at `0.1.3`.)
+## The confirmed mechanism (2026-08-29)
 
-## Setup
+The harness has a first-class human-checkpoint model — discovered from `/api/v1/openapi.json`:
 
-1. TrueForge running locally, with **one tool marked "requires approval"** so a run can pause on
-   it. Easiest: mark the **GitHub merge** tool as requiring approval (TOOLS.md §5 / §1 step 5).
-   For a pure spike with no GitHub, mark any harmless tool as requiring approval and trigger it.
-2. Start a session in the TrueForge chat that calls that tool, so the run **pauses on a pending
-   approval**. Note the session id if the UI shows one.
+1. **Mark tools as approval-gated** per MCP server via `require_approval_for_tools`
+   (`@all` / `@write` / `@destructive` / literal names; default `["@write","@destructive"]`).
+   The driver sets it inline on the session's agent spec so the read-only `ping` tool pauses.
+2. **Read** — when the agent calls a gated tool, its turn ends with a `tool.approval_required`
+   event carrying `thread_id` and `tool_calls[].id`. (Also surfaced in the turn's `pending_actions`
+   and the `/turns/{id}/events` stream.)
+3. **Action** — POST a new turn whose `input` is a `user.tool_approval` item:
+   `{ type:"user.tool_approval", thread_id, tool_call_id, approval:{ status:"allow"|"deny" } }`.
+   The agent then resumes (or the call is denied).
+
+This is exactly what the dashboard's blocking approval card needs (PR 5 gate, PR 9 card). The
+durable version of this note lives in `.agent/TOOLS.md` §6.
 
 ## Run
 
+Preconditions: TrueForge up; `mcp-ping` (spike 01) registered + running; `openrouter/glm5.3-flash`
+configured. Then (zero dependencies — Node 24 global fetch):
+
 ```bash
 cd spikes/03-approval-sdk
-npm install
-TRUEFORGE_API_URL=http://localhost:8790 SPIKE_SESSION_ID=<paused-session-id> node spike.mjs
+node approval-roundtrip.mjs
 ```
 
-Read the output: it prints the SDK's real surface, then whether a **read** of pending approvals
-and an **approve** call succeeded.
+## PASS criterion (met)
 
-## PASS criterion
+Driver output shows: `READ pending approval` (with `thread_id`/`tool_call_id`) → `approve (allow) 200`
+→ resume turn containing `pong`. I.e. an external client read the pending approval and actioned it,
+and the agent resumed. Confirmed end to end.
 
-A read call returns the pending approval **and** an approve call resumes the paused run (the tool
-then executes). That answers the unknown **YES → native approval card**; the dashboard (PR 9) will
-render a blocking card from this SDK state.
+## Fallback (not needed)
 
-## If it fails — fallback (`request_human_approval`)
-
-If the SDK cannot read or action approvals cleanly, take the spec fallback (PROJECT_SPEC §8,
-TOOLS.md §6): add a small MCP tool
-
-```
-request_human_approval(summary: string) -> { approved: boolean }
-```
-
-that **blocks** until the dashboard flips a flag (a row in Postgres the dashboard writes). The
-SKILL calls it before merge on the CLEAN path. It reuses the spike-01 MCP server pattern plus one
-polled DB flag. Build it only if this spike returns NO. Record "native SDK" vs
-"request_human_approval" in the repo-root **Spike results** table.
+If the native path had been unavailable, the plan was a `request_human_approval(summary)` MCP tool
+the dashboard flips via a DB flag. It is unnecessary — the native `user.tool_approval` resume works.
