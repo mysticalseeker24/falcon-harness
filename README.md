@@ -24,6 +24,23 @@ One vulnerability class (broken access control on new endpoints), one language (
 
 _[fill as built: MCP tools registered, SKILL.md loaded, Daytona sandbox, subagent auditor, human-approval checkpoint on merge, session persistence]_
 
+## Spike results (PR 1)
+
+Three empirical unknowns from `.agent/PROJECT_SPEC.md` §10, de-risked with throwaway spike code
+under [`spikes/`](./spikes) (deleted before PR 2). Fill each row after running the spike; if a
+primary path fails, take the named fallback and note it here.
+
+| # | Unknown | Result | Decision / fallback taken | Date |
+|---|---|---|---|---|
+| 1 | Custom MCP server registers + one tool call round-trips | PENDING | — | — |
+| 2 | One Daytona sandbox boots the app **and** probes it on localhost | PENDING | — | — |
+| 3 | Dashboard reads + actions a pending approval over the TrueForge SDK | PENDING | — | — |
+
+Fallbacks (from the spec): (1) if Streamable-HTTP registration fails, match the transport
+TrueForge's own MCP example uses (SSE or stdio); (2) if one sandbox can't both boot and probe,
+deploy the target to a Render URL and probe that; (3) if the SDK can't read/action approvals, add
+a `request_human_approval(summary)` MCP tool the dashboard flips via a DB flag.
+
 ## Run it
 
 _[setup steps a stranger can follow — filled as built]_

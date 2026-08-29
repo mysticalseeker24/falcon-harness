@@ -1,0 +1,15 @@
+{
+  "name": "spike-mcp-ping",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "THROWAWAY spike: minimal custom MCP server (one `ping` tool) to prove TrueForge registration + round-trip.",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "express": "^4.21.2",
+    "zod": "^3.24.1"
+  }
+}
