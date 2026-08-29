@@ -6,8 +6,8 @@ highest-value 90 seconds of the demo — a **native approval card** vs a fallbac
 
 > The exact SDK method names are not documented here on purpose. `spike.mjs` **introspects** the
 > SDK (prints its exports and client methods) and then tries a guarded best-guess flow. Use the
-> printed surface + the SDK docs at trueforge.dev to confirm the real names. (`package.json` pins
-> `latest` for now — replace with the resolved version once installed, per CONVENTIONS §7.)
+> printed surface, the harness API docs at `http://localhost:8790/api/v1/docs`, and the SDK docs at
+> trueforge.dev to confirm the real names. (`@truefoundry/trueforge-sdk` pinned at `0.1.3`.)
 
 ## Setup
 

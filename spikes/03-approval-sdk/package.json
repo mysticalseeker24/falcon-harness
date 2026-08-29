@@ -8,6 +8,6 @@
     "start": "node spike.mjs"
   },
   "dependencies": {
-    "@truefoundry/trueforge-sdk": "latest"
+    "@truefoundry/trueforge-sdk": "0.1.3"
   }
 }
