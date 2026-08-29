@@ -48,6 +48,18 @@ test("safe diff: same route but auth present", () => {
   assert.equal(routes[0].auth_present, true);
 });
 
+test("arrow handler is 'inline' even with preceding middleware (#8)", () => {
+  // The safe route has authMiddleware + requireAdmin before the arrow callback.
+  assert.equal(scopeSurface(SAFE_DIFF).routes[0].handler, "inline");
+});
+
+test("a named handler is reported by name (#8)", () => {
+  const diff = `@@ -1,0 +1,1 @@\n+app.get("/x", authMiddleware, myHandler);`;
+  const { routes } = scopeSurface(diff);
+  assert.equal(routes[0].handler, "myHandler");
+  assert.equal(routes[0].auth_present, true);
+});
+
 test("context lines and hunk headings are not treated as new routes", () => {
   // /admin/accounts (context, leading space) and /admin/tenants (in the @@ heading) must be ignored.
   const paths = scopeSurface(VULN_DIFF).routes.map((r) => r.path);

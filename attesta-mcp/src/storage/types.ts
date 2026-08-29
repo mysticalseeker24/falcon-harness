@@ -1,8 +1,13 @@
 import type { LedgerEntry } from "../lib/ledger.js";
 
-// Append-only ledger persistence. Implementations must return entries in insertion order.
+// A row read back from the ledger: either a validated entry, or a marker that the row at `index`
+// (0-based over non-empty rows) was unparseable/invalid, so verify can report corruption instead
+// of throwing.
+export type LedgerRow = { ok: true; entry: LedgerEntry } | { ok: false; index: number; reason: string };
+
+// Append-only ledger persistence. `read` returns rows in insertion order.
 export interface LedgerStore {
-  all(): Promise<LedgerEntry[]>;
+  read(): Promise<LedgerRow[]>;
   append(entry: LedgerEntry): Promise<void>;
 }
 

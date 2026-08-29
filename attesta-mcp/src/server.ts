@@ -9,6 +9,22 @@ import { getStores } from "./storage/factory.js";
 // One shared storage backend for the process (local FS by default; see storage/factory.ts).
 const stores = getStores();
 
+// A captured HTTP exchange. Structured so seal_evidence can verify a verdict against real evidence.
+const evidenceRequest = z
+  .object({
+    method: z.string(),
+    path: z.string().optional(),
+    url: z.string().optional(),
+    headers: z.record(z.string(), z.unknown()).optional(),
+    body: z.unknown().optional(),
+  })
+  .refine((r) => Boolean(r.path ?? r.url), { message: "request needs a path or url" });
+const evidenceResponse = z.object({
+  status: z.number().int(),
+  headers: z.record(z.string(), z.unknown()).optional(),
+  body: z.unknown().optional(),
+});
+
 const PORT = process.env.ATTESTA_MCP_PORT ? Number(process.env.ATTESTA_MCP_PORT) : 8130;
 // Bind to loopback by default (unauthenticated local dev server). Override only for a deployment
 // that also adds authentication + network controls.
@@ -41,14 +57,14 @@ function buildServer(): McpServer {
 
   server.tool(
     "seal_evidence",
-    "Append a hash-chained entry to the tamper-evident ledger and store the request/response artifact content-addressed. Redacts credentials before storing. Returns the new entry_hash.",
+    "Append a hash-chained entry to the tamper-evident ledger and store the request/response artifact content-addressed. Credentials are redacted (any depth) before storing. An EXPLOITED verdict is rejected unless the response is 2xx with a non-empty body. Returns the new entry_hash.",
     {
       target_repo: z.string(),
       pr_number: z.number().int().nullish(),
       route: z.string().nullish(),
       verdict: z.enum(["EXPLOITED", "CLEAN", "APPROVAL"]),
-      request: z.unknown(),
-      response: z.unknown(),
+      request: evidenceRequest,
+      response: evidenceResponse,
       auditor_ok: z.boolean().nullish(),
       approver: z.string().nullish(),
     },

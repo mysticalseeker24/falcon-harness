@@ -49,13 +49,13 @@ function middlewareArgs(tail: string): string {
 }
 
 function describeHandler(tail: string): string {
-  const beforeArrow = tail
-    .split("=>")[0]
-    .replace(/^[\s,]+/, "") // leading comma between path and handler
-    .replace(/[,{(\s]+$/, "")
-    .trim();
-  if (beforeArrow === "" || beforeArrow.startsWith("(")) return "inline";
-  return beforeArrow;
+  // An arrow callback is the handler regardless of how many middleware precede it.
+  if (tail.includes("=>") || /\bfunction\b/.test(tail)) return "inline";
+  // Otherwise the handler is a named reference — the last argument token.
+  const cleaned = tail.replace(/[);\s]+$/, "").trim();
+  if (cleaned === "") return "inline";
+  const last = cleaned.split(",").map((p) => p.trim()).filter(Boolean).at(-1) ?? "";
+  return /^[A-Za-z_$][\w$]*$/.test(last) ? last : "inline";
 }
 
 function isCommentLine(trimmed: string): boolean {
