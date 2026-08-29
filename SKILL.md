@@ -46,6 +46,9 @@ split across multiple lines. Therefore:
 
 ### 2. Boot the target in the sandbox
 In the Daytona sandbox, get `vulnbank` running on `localhost:3000`:
+- **Get the code the PR proposes.** `git clone https://github.com/DevLab-mgc/vulnbank.git` and check
+  out the PR's **head branch** (the branch under review, e.g. `pr/admin-balances-vuln`) — you must
+  test the branch's code, not `main`. The PR read tool gives you the head branch name.
 - The sandbox base image may ship without Node — if `node` is missing, install Node 22+ first.
 - `npm install`, then start the app in the background; wait until it is listening.
 - **Boot gate:** `GET /health` must return **`200` AND the body `{"ok":true}`** before you probe.
