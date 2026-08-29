@@ -101,6 +101,54 @@ test("multiple added routes are all captured", () => {
   );
 });
 
+test("auth identifiers inside the handler body do NOT count as middleware (#3)", () => {
+  const diff = `@@ -1,0 +1,1 @@
++app.get("/public", (_req, res) => { requireAdmin(); res.send("ok"); });`;
+  const { routes } = scopeSurface(diff);
+  assert.equal(routes.length, 1);
+  assert.equal(routes[0].path, "/public");
+  assert.equal(routes[0].auth_present, false, "requireAdmin in the body is not attached auth");
+});
+
+test("route-looking text in comments and strings is not a route (#4)", () => {
+  const diff = `@@ -1,0 +1,3 @@
++// app.get("/from-comment", authMiddleware, handler);
++const example = "router.post('/from-string', handler)";
++ * app.delete("/from-block-comment", handler)`;
+  assert.equal(scopeSurface(diff).routes.length, 0);
+});
+
+test("real route still detected among comment/string noise (#4)", () => {
+  const diff = `@@ -1,0 +1,2 @@
++// app.get("/noise", handler);
++app.get("/real", authMiddleware, handler);`;
+  const { routes } = scopeSurface(diff);
+  assert.equal(routes.length, 1);
+  assert.equal(routes[0].path, "/real");
+  assert.equal(routes[0].auth_present, true);
+});
+
+test("\\ No newline at end of file marker does not advance the counter (#5)", () => {
+  const diff = `@@ -1,1 +1,2 @@
+ keep = 0;
+\\ No newline at end of file
++app.get("/eof-route", h);`;
+  const { routes } = scopeSurface(diff);
+  assert.equal(routes.length, 1);
+  assert.equal(routes[0].source_line, 2);
+});
+
+test("added line beginning with ++ is content, not a header, and advances the counter (#6)", () => {
+  const diff = `@@ -1,1 +1,3 @@
+ let counter = 0;
++++counter;
++app.get("/after-incr", h);`;
+  const { routes } = scopeSurface(diff);
+  assert.equal(routes.length, 1);
+  assert.equal(routes[0].path, "/after-incr");
+  assert.equal(routes[0].source_line, 3);
+});
+
 test("oversized diff is rejected", () => {
   const big = "+".repeat(1_000_001);
   assert.throws(() => scopeSurface(big), /exceeds/);

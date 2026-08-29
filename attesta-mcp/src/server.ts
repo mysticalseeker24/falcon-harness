@@ -5,6 +5,20 @@ import { z } from "zod";
 import { scopeSurface } from "./lib/scopeSurface.js";
 
 const PORT = process.env.ATTESTA_MCP_PORT ? Number(process.env.ATTESTA_MCP_PORT) : 8130;
+// Bind to loopback by default (unauthenticated local dev server). Override only for a deployment
+// that also adds authentication + network controls.
+const HOST = process.env.ATTESTA_MCP_HOST ?? "127.0.0.1";
+
+// Await both closes and log any failure, so cleanup can never become an unhandled rejection.
+async function closeQuietly(transport: StreamableHTTPServerTransport, server: McpServer): Promise<void> {
+  const results = await Promise.allSettled([
+    Promise.resolve(transport.close()),
+    Promise.resolve(server.close()),
+  ]);
+  for (const r of results) {
+    if (r.status === "rejected") console.error("MCP cleanup failed:", r.reason);
+  }
+}
 
 // Stateless Streamable-HTTP MCP server (the transport confirmed working in spike 01).
 function buildServer(): McpServer {
@@ -30,8 +44,7 @@ app.post("/mcp", async (req, res) => {
   const server = buildServer();
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   res.on("close", () => {
-    transport.close();
-    server.close();
+    void closeQuietly(transport, server);
   });
   try {
     await server.connect(transport);
@@ -46,6 +59,6 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
-app.listen(PORT, () => {
-  console.log(`attesta-mcp listening on http://localhost:${PORT}/mcp`);
+app.listen(PORT, HOST, () => {
+  console.log(`attesta-mcp listening on http://${HOST}:${PORT}/mcp`);
 });

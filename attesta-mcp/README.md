@@ -18,6 +18,9 @@ npm test           # unit tests (node:test via tsx)
 npm run typecheck  # tsc --noEmit
 ```
 
+The server binds **loopback (`127.0.0.1`) by default** — it is an unauthenticated local dev server.
+Override `ATTESTA_MCP_HOST` only for a deployment that also adds auth + network controls.
+
 Register in TrueForge: Settings → Connectors → Add MCP Server → `http://localhost:8130/mcp`.
 
 ## `scope_surface(diff) -> { routes: [...] }`
@@ -33,11 +36,13 @@ Reads the **added** lines of a unified diff and returns the new Express route re
 }
 ```
 
-- `auth_present` is `true` when a known auth-middleware identifier (`authMiddleware`, `requireAdmin`,
-  `requireAuth`, …) appears in the handler chain on the route's line.
+- `auth_present` is `true` only when a known auth-middleware identifier (`authMiddleware`,
+  `requireAdmin`, `requireAuth`, …) appears in the **middleware arguments** — before the handler
+  function, with comments and string contents stripped so they can't masquerade as middleware.
 - `source_line` is the line in the new file.
 
 **Honest scope (by design, stated plainly):** regex-based, no AST. It detects
-`<router>.<method>("/path", …)` when the method + path are on one added line, and reads auth
-identifiers from that same line; middleware split across separate lines is not followed. The diff
-is treated as untrusted input — size-bounded, never executed, never interpolated into any sink.
+`<router>.<method>("/path", …)` when the registration **begins the added line** (an executable
+position, not inside a comment or string) with method + path on that line; middleware split across
+separate lines is not followed. The diff is treated as untrusted input — size-bounded, never
+executed, never interpolated into any sink.

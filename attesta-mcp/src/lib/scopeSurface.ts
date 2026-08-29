@@ -3,9 +3,11 @@
 // Pure, dependency-free, and deliberately regex-based (no AST/tree-sitter): it reads the ADDED
 // lines of a unified diff, finds new Express route registrations, and records whether an auth
 // middleware is attached. Honest scope, stated plainly:
-//   - Detects `<router>.<method>("/path", ...)` where the method + path are on one added line.
-//   - `auth_present` is true when a known auth-middleware identifier appears in the handler chain
-//     ON THAT LINE. Middleware split onto separate lines is not followed (single-line assumption).
+//   - Detects `<router>.<method>("/path", ...)` when the registration BEGINS the added line (an
+//     executable position — not inside a comment or a string), method + path on that one line.
+//   - `auth_present` is true only when a known auth-middleware identifier appears in the
+//     MIDDLEWARE ARGUMENTS (before the handler function), with comments and string contents
+//     stripped so they cannot masquerade as middleware.
 // The diff is untrusted input: bounded in size, never evaluated, never interpolated anywhere.
 
 export interface ScopedRoute {
@@ -27,20 +29,33 @@ const MAX_DIFF_BYTES = 1_000_000;
 const AUTH_IDENTIFIER =
   /\b(authMiddleware|requireAuth|requireAdmin|requireRole|requireUser|ensureAuth|ensureAdmin|ensureLoggedIn|isAuthenticated|verifyToken|checkAuth|passport|jwt)\b/;
 
-// A route registration: <router>.<httpMethod>( "<path starting with />" , <rest...>
-// Router var is any identifier (app, router, adminRouter, …). Path must start with "/" so we
-// don't match unrelated calls like `cache.get("key")` or `map.get("id")`.
+// Route registration, ANCHORED to the start of the (trimmed) added line. Router var is any
+// identifier (app, router, adminRouter, …). Path must start with "/" so we don't match unrelated
+// calls like `cache.get("key")`.
 const ROUTE =
-  /\b(\w[\w$]*)\.(get|post|put|delete|patch|options|head|all)\s*\(\s*(['"`])(\/[^'"`]*)\3\s*(.*)$/;
+  /^(\w[\w$]*)\.(get|post|put|delete|patch|options|head|all)\s*\(\s*(['"`])(\/[^'"`]*)\3\s*(.*)$/;
 
 // Hunk header: @@ -oldStart[,oldLen] +newStart[,newLen] @@
 const HUNK = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
 
+// Everything before the handler function body, with comments and string contents removed, so an
+// identifier in the callback body / a comment / a string cannot be read as middleware.
+function middlewareArgs(tail: string): string {
+  const arrowAt = tail.indexOf("=>");
+  const region = arrowAt === -1 ? tail : tail.slice(0, arrowAt);
+  return region
+    .replace(/\/\/.*$/, "") // line comment
+    .replace(/(['"`])(?:\\.|[^\\])*?\1/g, ""); // string literals -> empty
+}
+
 function describeHandler(tail: string): string {
-  // Strip a trailing "=> {" / "=> (" arrow-body opener; report the remaining chain, or "inline".
   const beforeArrow = tail.split("=>")[0].replace(/[,{(\s]+$/, "").trim();
   if (beforeArrow === "" || beforeArrow.startsWith("(")) return "inline";
   return beforeArrow;
+}
+
+function isCommentLine(trimmed: string): boolean {
+  return trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*");
 }
 
 export function scopeSurface(diff: string): ScopeSurfaceResult {
@@ -56,37 +71,51 @@ export function scopeSurface(diff: string): ScopeSurfaceResult {
   let inHunk = false;
 
   for (const raw of diff.split("\n")) {
+    // File/section headers. The trailing space distinguishes "+++ b/file" / "--- a/file" from
+    // added/removed source such as "+++counter;" / "---counter;". These also end the current hunk.
+    if (
+      raw.startsWith("diff --git ") ||
+      raw.startsWith("index ") ||
+      raw.startsWith("--- ") ||
+      raw.startsWith("+++ ")
+    ) {
+      inHunk = false;
+      continue;
+    }
+
     const hunk = HUNK.exec(raw);
     if (hunk) {
       newLine = Number(hunk[1]);
       inHunk = true;
       continue;
     }
-    // File headers — ignore, and they don't advance line numbers.
-    if (raw.startsWith("+++") || raw.startsWith("---") || raw.startsWith("diff ") || raw.startsWith("index ")) {
-      continue;
-    }
+
     if (!inHunk) continue;
+
+    // "\ No newline at end of file" — metadata; advances neither counter.
+    if (raw.startsWith("\\")) continue;
 
     const marker = raw[0];
     if (marker === "+") {
-      const content = raw.slice(1);
-      const m = ROUTE.exec(content);
-      if (m) {
-        const [, , method, , path, tail] = m;
-        routes.push({
-          method: method.toUpperCase(),
-          path,
-          handler: describeHandler(tail),
-          auth_present: AUTH_IDENTIFIER.test(tail),
-          source_line: newLine,
-        });
+      const trimmed = raw.slice(1).replace(/^\s+/, "");
+      if (!isCommentLine(trimmed)) {
+        const m = ROUTE.exec(trimmed);
+        if (m) {
+          const [, , method, , path, tail] = m;
+          routes.push({
+            method: method.toUpperCase(),
+            path,
+            handler: describeHandler(tail),
+            auth_present: AUTH_IDENTIFIER.test(middlewareArgs(tail)),
+            source_line: newLine,
+          });
+        }
       }
       newLine += 1;
     } else if (marker === "-") {
       // Removed line — present only in the old file; do not advance the new-file counter.
     } else {
-      // Context line (space) or anything else within a hunk — advances the new-file counter.
+      // Context line — advances the new-file counter.
       newLine += 1;
     }
   }
