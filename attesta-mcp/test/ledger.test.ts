@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { canonicalJson } from "../src/lib/canonicalJson.js";
 import { GENESIS_PREV_HASH } from "../src/lib/hash.js";
-import { sealEvidence, verifyLedger, type LedgerEntry, type SealInput } from "../src/lib/ledger.js";
+import { computeEntryHash, sealEvidence, verifyLedger, type LedgerEntry, type SealInput } from "../src/lib/ledger.js";
 import { LocalArtifactStore, LocalLedgerStore } from "../src/storage/local.js";
 
 async function freshStores() {
@@ -185,7 +185,8 @@ test("a malformed ledger row is reported as corruption, not thrown (#7)", async 
 
 test("APPROVAL seals who approved which finding, with no HTTP artifact", async () => {
   const s = await freshStores();
-  const finding = await sealEvidence(sample("CLEAN"), s.ledger, s.artifacts);
+  // The CLEAN finding and the approval must be for the same repo + PR.
+  const finding = await sealEvidence({ ...sample("CLEAN"), pr_number: 4 }, s.ledger, s.artifacts);
   const appr = await sealEvidence(
     {
       target_repo: "DevLab-mgc/vulnbank",
@@ -224,6 +225,54 @@ test("APPROVAL requires approver and approves_entry_hash", async () => {
     /approves_entry_hash/,
   );
   assert.equal((await s.ledger.read()).length, 0);
+});
+
+test("APPROVAL reference must be a valid hex hash of a prior CLEAN finding for the same repo+PR (#2)", async () => {
+  const s = await freshStores();
+  const clean = await sealEvidence({ ...sample("CLEAN"), pr_number: 4 }, s.ledger, s.artifacts);
+  const expl = await sealEvidence({ ...sample("EXPLOITED"), pr_number: 3 }, s.ledger, s.artifacts);
+  const base = { target_repo: "DevLab-mgc/vulnbank", route: null, verdict: "APPROVAL" as const, auditor_ok: null, approver: "alice" };
+
+  await assert.rejects(sealEvidence({ ...base, pr_number: 4, approves_entry_hash: "not-hex" }, s.ledger, s.artifacts), /hex/);
+  await assert.rejects(sealEvidence({ ...base, pr_number: 4, approves_entry_hash: "a".repeat(64) }, s.ledger, s.artifacts), /does not reference/);
+  await assert.rejects(sealEvidence({ ...base, pr_number: 3, approves_entry_hash: expl.entry_hash }, s.ledger, s.artifacts), /CLEAN/);
+  await assert.rejects(sealEvidence({ ...base, pr_number: 99, approves_entry_hash: clean.entry_hash }, s.ledger, s.artifacts), /must match/);
+
+  const ok = await sealEvidence({ ...base, pr_number: 4, approves_entry_hash: clean.entry_hash }, s.ledger, s.artifacts);
+  assert.match(ok.entry_hash, /^[0-9a-f]{64}$/);
+});
+
+test("legacy rows without approves_entry_hash still validate, verify, and accept appends (#1)", async () => {
+  const s = await freshStores();
+  // A row written before the approves_entry_hash field existed: hash computed WITHOUT it.
+  const legacy: Omit<LedgerEntry, "entry_hash"> = {
+    id: "legacy-1",
+    ts: "2026-08-01T00:00:00.000Z",
+    target_repo: "DevLab-mgc/vulnbank",
+    pr_number: 1,
+    route: "/x",
+    verdict: "CLEAN",
+    request: { method: "GET" },
+    response: { status: 401 },
+    artifact_key: null,
+    auditor_ok: true,
+    approver: null,
+    prev_hash: GENESIS_PREV_HASH,
+  };
+  const entry_hash = computeEntryHash(legacy); // canonicalized without approves_entry_hash
+  await fs.writeFile(s.ledgerPath, `${JSON.stringify({ ...legacy, entry_hash })}\n`);
+
+  const rows = await s.ledger.read();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].ok, true);
+  assert.deepEqual(await verifyLedger(s.ledger, s.artifacts), { valid: true, length: 1, broken_at: null });
+
+  // A new entry appends and chains from the legacy tip.
+  await sealEvidence(sample("EXPLOITED"), s.ledger, s.artifacts);
+  const es = await entries(s.ledger);
+  assert.equal(es.length, 2);
+  assert.equal(es[1].prev_hash, entry_hash);
+  assert.deepEqual(await verifyLedger(s.ledger, s.artifacts), { valid: true, length: 2, broken_at: null });
 });
 
 test("empty ledger verifies as valid, length 0", async () => {

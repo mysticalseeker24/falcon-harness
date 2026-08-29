@@ -48,7 +48,10 @@ export interface LedgerEntry {
   artifact_key: string | null;
   auditor_ok: boolean | null;
   approver: string | null;
-  approves_entry_hash: string | null;
+  // Optional so legacy rows written before this field existed still validate and hash the same
+  // (we never inject it into an entry that did not carry it). New rows always write it (null for
+  // non-APPROVAL).
+  approves_entry_hash?: string | null;
   prev_hash: string;
   entry_hash: string;
 }
@@ -73,7 +76,8 @@ export const LedgerEntrySchema = z.object({
   artifact_key: z.string().nullable(),
   auditor_ok: z.boolean().nullable(),
   approver: z.string().nullable(),
-  approves_entry_hash: z.string().nullable(),
+  // Backward-compatible: absent on legacy rows (accepted, not injected), null/string on new rows.
+  approves_entry_hash: z.string().nullable().optional(),
   prev_hash: z.string().length(64),
   entry_hash: z.string().length(64),
 });
@@ -132,11 +136,31 @@ async function doSeal(
   let artifact_key: string | null = null;
   let approves_entry_hash: string | null = null;
 
+  // Read the chain once — used for the tip AND (for APPROVAL) to resolve the referenced finding.
+  const rows = await ledger.read();
+  const tip = rows.at(-1);
+  if (tip && !tip.ok) {
+    throw new Error("ledger tail is corrupt; refusing to append");
+  }
+
   if (input.verdict === "APPROVAL") {
     // An approval records who approved which sealed finding — not an HTTP exchange.
     if (!input.approver) throw new Error("APPROVAL requires an approver");
-    if (!input.approves_entry_hash) {
-      throw new Error("APPROVAL must reference the approved finding (approves_entry_hash)");
+    if (!input.approves_entry_hash || !/^[0-9a-f]{64}$/.test(input.approves_entry_hash)) {
+      throw new Error("APPROVAL approves_entry_hash must be a 64-char lowercase hex hash");
+    }
+    // Resolve the reference: it must identify a prior CLEAN finding for the same repo + PR.
+    const approved = rows.find(
+      (r): r is Extract<typeof r, { ok: true }> => r.ok && r.entry.entry_hash === input.approves_entry_hash,
+    );
+    if (!approved) {
+      throw new Error("APPROVAL approves_entry_hash does not reference any sealed entry");
+    }
+    if (approved.entry.verdict !== "CLEAN") {
+      throw new Error("APPROVAL must reference a CLEAN finding");
+    }
+    if (approved.entry.target_repo !== input.target_repo || approved.entry.pr_number !== input.pr_number) {
+      throw new Error("APPROVAL repo/PR must match the approved finding");
     }
     approves_entry_hash = input.approves_entry_hash;
   } else {
@@ -151,11 +175,6 @@ async function doSeal(
     artifact_key = await artifacts.put(artifactBytes);
   }
 
-  const rows = await ledger.read();
-  const tip = rows.at(-1);
-  if (tip && !tip.ok) {
-    throw new Error("ledger tail is corrupt; refusing to append");
-  }
   const prev_hash = tip ? tip.entry.entry_hash : GENESIS_PREV_HASH;
 
   const unsealed: Omit<LedgerEntry, "entry_hash"> = {

@@ -66,8 +66,14 @@ function buildServer(): McpServer {
       request: evidenceRequest.optional(),
       response: evidenceResponse.optional(),
       auditor_ok: z.boolean().nullish(),
+      // For APPROVAL only. NOTE: an APPROVAL entry is meant to be sealed by the authenticated
+      // approval handler (the dashboard), which supplies `approver` from its trusted session — not
+      // by the main agent from model-supplied arguments. See .agent/GATE.md.
       approver: z.string().nullish(),
-      approves_entry_hash: z.string().nullish(),
+      approves_entry_hash: z
+        .string()
+        .regex(/^[0-9a-f]{64}$/, "must be a 64-char lowercase hex hash")
+        .nullish(),
     },
     async (input) => {
       const result = await sealEvidence(
