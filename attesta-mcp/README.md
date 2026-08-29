@@ -53,9 +53,13 @@ executed, never interpolated into any sink.
 
 ## `seal_evidence(finding) -> { entry_hash }`
 
-Appends a hash-chained entry to the ledger and stores the request/response artifact
-content-addressed. `Authorization`/`Cookie`/`x-api-key` header values are redacted before anything
-is stored or hashed.
+Appends a hash-chained entry to the ledger.
+- **EXPLOITED / CLEAN** — pass the captured `request` + `response`; the artifact is stored
+  content-addressed and `Authorization`/`Cookie`/`x-api-key` values are redacted (any depth) before
+  anything is stored or hashed. `EXPLOITED` is rejected unless the response is 2xx with a non-empty body.
+- **APPROVAL** — pass `approver` + `approves_entry_hash` (the `entry_hash` of the finding a human
+  approved). No request/response; records who approved which finding, and when. So the approval
+  itself is sealed into the same tamper-evident chain.
 
 Hashing contract (one function, `lib/canonicalJson.ts` + `lib/hash.ts`):
 

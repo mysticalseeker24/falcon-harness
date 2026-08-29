@@ -57,16 +57,23 @@ function buildServer(): McpServer {
 
   server.tool(
     "seal_evidence",
-    "Append a hash-chained entry to the tamper-evident ledger and store the request/response artifact content-addressed. Credentials are redacted (any depth) before storing. An EXPLOITED verdict is rejected unless the response is 2xx with a non-empty body. Returns the new entry_hash.",
+    "Append a hash-chained entry to the tamper-evident ledger. For EXPLOITED/CLEAN, pass the captured request+response (stored content-addressed, credentials redacted at any depth; EXPLOITED is rejected unless the response is 2xx with a non-empty body). For APPROVAL, pass approver + approves_entry_hash (the entry_hash of the finding a human approved); no request/response. Returns the new entry_hash.",
     {
       target_repo: z.string(),
       pr_number: z.number().int().nullish(),
       route: z.string().nullish(),
       verdict: z.enum(["EXPLOITED", "CLEAN", "APPROVAL"]),
-      request: evidenceRequest,
-      response: evidenceResponse,
+      request: evidenceRequest.optional(),
+      response: evidenceResponse.optional(),
       auditor_ok: z.boolean().nullish(),
+      // For APPROVAL only. NOTE: an APPROVAL entry is meant to be sealed by the authenticated
+      // approval handler (the dashboard), which supplies `approver` from its trusted session — not
+      // by the main agent from model-supplied arguments. See .agent/GATE.md.
       approver: z.string().nullish(),
+      approves_entry_hash: z
+        .string()
+        .regex(/^[0-9a-f]{64}$/, "must be a 64-char lowercase hex hash")
+        .nullish(),
     },
     async (input) => {
       const result = await sealEvidence(
@@ -79,6 +86,7 @@ function buildServer(): McpServer {
           response: input.response,
           auditor_ok: input.auditor_ok ?? null,
           approver: input.approver ?? null,
+          approves_entry_hash: input.approves_entry_hash ?? null,
         },
         stores.ledger,
         stores.artifacts,
