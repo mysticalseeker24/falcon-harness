@@ -44,7 +44,11 @@ Reads the **added** lines of a unified diff and returns the new Express route re
 **Honest scope (by design, stated plainly):** regex-based, no AST. It detects
 `<router>.<method>("/path", …)` when the registration **begins the added line** (an executable
 position, not inside a comment or string) with method + path on that line; middleware split across
-separate lines is not followed. The diff is treated as untrusted input — size-bounded, never
+separate lines is not followed. It reports routes **added** by the diff and the auth on each added
+line — it does **not** compare against removed lines or prior middleware, so on its own it does not
+detect auth *weakened or removed* from a pre-existing route (e.g. a route whose middleware changed
+across multiple lines). `SKILL.md` treats any such case as **INCONCLUSIVE** and flags it for human
+review rather than assuming it is safe. The diff is treated as untrusted input — size-bounded, never
 executed, never interpolated into any sink.
 
 ## `seal_evidence(finding) -> { entry_hash }`

@@ -8,8 +8,9 @@ so the spine is reproducible.
 ## Prerequisites (configured earlier)
 
 - TrueForge running (WSL, Node 24) at `http://localhost:8790`.
-- OpenRouter models registered; main agent = `openrouter/glm5.3-flash` (cheap for iteration;
-  switch to `deepseek/deepseek-v4-pro-0813:exacto` for the demo/bench).
+- OpenRouter models registered (TOOLS.md §3); main agent = `z-ai/glm-5.3-flash:exacto` (cheap for
+  iteration; switch to `deepseek/deepseek-v4-pro-0813:exacto` for the demo/bench). These appear in
+  TrueForge under the harness names `openrouter/glm5.3-flash` / `openrouter/deepseekv4-pro`.
 - Daytona sandbox key configured (`status: ready`).
 
 ## Wire the spine
