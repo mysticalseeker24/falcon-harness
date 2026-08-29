@@ -46,6 +46,13 @@ split across multiple lines. Therefore:
 
 ### 2. Boot the target in the sandbox
 In the Daytona sandbox, get `vulnbank` running on `localhost:3000`:
+- **Get exactly the code the PR proposes — by commit SHA, not branch name.** From the PR read tool,
+  take the PR's **head repository** (it may be a fork, not `DevLab-mgc/vulnbank`) and its **head
+  commit SHA**. Clone that head repo (or `git fetch` the PR ref `refs/pull/<n>/head`), then
+  `git checkout <head-sha>` in **detached HEAD**, and confirm `git rev-parse HEAD` equals that SHA
+  before you install or boot. Never rely on a branch name: branches move and forks differ, so the
+  code you boot must match the exact revision the diff you scoped came from — otherwise the run is
+  **INCONCLUSIVE**.
 - The sandbox base image may ship without Node — if `node` is missing, install Node 22+ first.
 - `npm install`, then start the app in the background; wait until it is listening.
 - **Boot gate:** `GET /health` must return **`200` AND the body `{"ok":true}`** before you probe.
