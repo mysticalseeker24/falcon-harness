@@ -4,7 +4,15 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { scopeSurface } from "./lib/scopeSurface.js";
 import { sealEvidence, verifyLedger } from "./lib/ledger.js";
+import { auditFinding } from "./lib/auditor.js";
+import { makeOpenRouterCall } from "./lib/openrouter.js";
 import { getStores } from "./storage/factory.js";
+
+// The independent auditor runs on a DIFFERENT model family than the main agent (default: cheap
+// z-ai/glm-5.3-flash while the main agent is DeepSeek). It must not share a family with the writer.
+const AUDITOR_MODEL = process.env.AUDITOR_MODEL ?? "z-ai/glm-5.3-flash";
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? "";
+const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1";
 
 // One shared storage backend for the process (local FS by default; see storage/factory.ts).
 const stores = getStores();
@@ -90,6 +98,41 @@ function buildServer(): McpServer {
         },
         stores.ledger,
         stores.artifacts,
+      );
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.tool(
+    "audit_finding",
+    "Independently audit an EXPLOITED/CLEAN finding on a DIFFERENT model family than the main agent (the writer is never its own verifier). Runs objective consistency checks, then a single cheap different-family model confirms the captured evidence supports the verdict. Returns { auditor_ok, reason, checks, model }. The main agent must not seal or post until auditor_ok is true.",
+    {
+      verdict: z.enum(["EXPLOITED", "CLEAN"]),
+      route: z.string().nullish(),
+      request: z.object({
+        method: z.string(),
+        url: z.string().optional(),
+        path: z.string().optional(),
+        headers: z.record(z.string(), z.unknown()).optional(),
+        body: z.unknown().optional(),
+      }),
+      response: z.object({
+        status: z.number().int(),
+        headers: z.record(z.string(), z.unknown()).optional(),
+        body: z.unknown().optional(),
+      }),
+    },
+    async (input) => {
+      if (!OPENROUTER_API_KEY) {
+        // Fail closed: without the independent model we cannot confirm, so we never approve.
+        const result = { auditor_ok: false, reason: "auditor model not configured (OPENROUTER_API_KEY missing)", checks: [], model: AUDITOR_MODEL };
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+      }
+      const modelCall = makeOpenRouterCall({ model: AUDITOR_MODEL, apiKey: OPENROUTER_API_KEY, baseUrl: OPENROUTER_BASE_URL });
+      const result = await auditFinding(
+        { verdict: input.verdict, route: input.route ?? null, request: input.request, response: input.response },
+        modelCall,
+        AUDITOR_MODEL,
       );
       return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },

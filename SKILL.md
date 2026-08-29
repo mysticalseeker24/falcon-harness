@@ -89,9 +89,11 @@ Run the checks that fit the route, against the baseline that correct access cont
   never treated as CLEAN.**
 
 ### 5. Independent audit — do not skip
-For an `EXPLOITED` or `CLEAN` finding, hand it (verdict, captured request, response, status) to the
-**auditor subagent**. Do **not** seal or post anything until it returns `auditor_ok == true`. You
-are never your own verifier.
+First **re-run the decisive probe once more** so the evidence is freshly executed, not just
+remembered. Then call **`audit_finding`** with the finding (verdict, route, captured request,
+response). It runs on a **different model family** than you and returns `{ auditor_ok, reason,
+checks }` — objective consistency checks plus an independent judgment. Do **not** seal or post
+anything until `auditor_ok == true`. You are never your own verifier.
 
 ### 6. Seal the evidence
 After `auditor_ok`, for an `EXPLOITED` or `CLEAN` verdict only: call **`seal_evidence(finding)`**

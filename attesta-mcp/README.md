@@ -8,6 +8,7 @@ confirmed in spike 01). Three tools are planned:
 | `scope_surface(diff)` | **implemented** | new HTTP routes a PR introduces + whether each has auth |
 | `seal_evidence(finding)` | **implemented** | append a hash-chained entry to the ledger + store the artifact |
 | `verify_ledger()` | **implemented** | recompute the chain and re-read artifact bytes |
+| `audit_finding(finding)` | **implemented** | independent audit on a different model family before sealing |
 
 ## Run
 
@@ -74,6 +75,23 @@ artifact_key       = sha256(artifact bytes)   # content-addressed
 Recomputes the chain from genesis **and re-reads + re-hashes each artifact's bytes** — it never
 trusts the stored row. `broken_at` is the id of the first tampered entry (or `null`). A mutated
 ledger row, a mutated artifact, or a missing artifact all fail verification.
+
+## `audit_finding(finding) -> { auditor_ok, reason, checks, model }`
+
+The independent auditor — "the writer is never its own verifier". Two layers, in the style of a
+structured code reviewer (rubric-driven, evidence-linked pass/fail checks):
+
+1. **Deterministic checks** (no model, cheap): objective consistency between the captured evidence
+   and the verdict — request+response present; EXPLOITED ⟹ 2xx + non-empty body; CLEAN ⟹ 401/403.
+   If these fail, the model is never called and `auditor_ok` is false.
+2. **A single call to a DIFFERENT model family** (`AUDITOR_MODEL`, default `z-ai/glm-5.3-flash` while
+   the main agent is DeepSeek — cheap, and a genuinely different family per TOOLS.md §3) that judges,
+   against an explicit rubric, whether the evidence supports the verdict.
+
+`auditor_ok` is true only if both agree. It **fails closed**: if the model call errors or
+`OPENROUTER_API_KEY` is unset, `auditor_ok` is false (never a rubber stamp). Needs
+`OPENROUTER_API_KEY` in attesta-mcp's env; the auditor model **must** be a different family than the
+main agent.
 
 ## Storage
 
