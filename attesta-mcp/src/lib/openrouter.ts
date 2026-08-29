@@ -30,7 +30,7 @@ export function makeOpenRouterCall(opts: OpenRouterOptions): ModelCall {
           { role: "user", content: userContent },
         ],
       }),
-      signal: AbortSignal.timeout(opts.timeoutMs ?? 30_000),
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 45_000),
     });
     if (!res.ok) {
       throw new Error(`auditor model call failed: HTTP ${res.status}`);

@@ -3,34 +3,49 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { scopeSurface } from "./lib/scopeSurface.js";
-import { sealEvidence, verifyLedger } from "./lib/ledger.js";
+import { sealEvidence, verifyLedger, type Auditor } from "./lib/ledger.js";
 import { auditFinding } from "./lib/auditor.js";
 import { makeOpenRouterCall } from "./lib/openrouter.js";
 import { getStores } from "./storage/factory.js";
 
-// The independent auditor runs on a DIFFERENT model family than the main agent (default: cheap
-// z-ai/glm-5.3-flash while the main agent is DeepSeek). It must not share a family with the writer.
+// The independent auditor runs on a DIFFERENT model family than the main agent (the writer). Default
+// auditor: cheap z-ai/glm-5.3-flash; writer default: DeepSeek. Independence is enforced (not assumed)
+// by comparing model families at audit time.
 const AUDITOR_MODEL = process.env.AUDITOR_MODEL ?? "z-ai/glm-5.3-flash";
+const WRITER_MODEL = process.env.WRITER_MODEL ?? "deepseek/deepseek-v4-pro-0813";
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? "";
 const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1";
 
 // One shared storage backend for the process (local FS by default; see storage/factory.ts).
 const stores = getStores();
 
-// A captured HTTP exchange. Structured so seal_evidence can verify a verdict against real evidence.
-const evidenceRequest = z
-  .object({
-    method: z.string(),
-    path: z.string().optional(),
-    url: z.string().optional(),
-    headers: z.record(z.string(), z.unknown()).optional(),
-    body: z.unknown().optional(),
-  })
-  .refine((r) => Boolean(r.path ?? r.url), { message: "request needs a path or url" });
-const evidenceResponse = z.object({
+// The auditor injected into seal_evidence. Fails closed if the key is missing.
+const auditor: Auditor = async (input) => {
+  if (!OPENROUTER_API_KEY) {
+    return { auditor_ok: false, reason: "auditor model not configured (OPENROUTER_API_KEY missing)", checks: [], model: AUDITOR_MODEL };
+  }
+  const modelCall = makeOpenRouterCall({ model: AUDITOR_MODEL, apiKey: OPENROUTER_API_KEY, baseUrl: OPENROUTER_BASE_URL });
+  return auditFinding(input, modelCall, { auditorModel: AUDITOR_MODEL, writerModel: WRITER_MODEL });
+};
+
+// One captured probe (a complete HTTP exchange + who called it + what correct access control should do).
+const httpRequest = z.object({
+  method: z.string(),
+  url: z.string(),
+  headers: z.record(z.string(), z.unknown()),
+  body: z.unknown().nullable(),
+});
+const httpResponse = z.object({
   status: z.number().int(),
-  headers: z.record(z.string(), z.unknown()).optional(),
-  body: z.unknown().optional(),
+  headers: z.record(z.string(), z.unknown()),
+  body: z.unknown().nullable(),
+});
+const probeSchema = z.object({
+  label: z.string(),
+  auth_context: z.enum(["unauthenticated", "wrong-tenant", "non-admin", "authorized"]),
+  expected: z.enum(["deny", "allow"]),
+  request: httpRequest,
+  response: httpResponse,
 });
 
 const PORT = process.env.ATTESTA_MCP_PORT ? Number(process.env.ATTESTA_MCP_PORT) : 8130;
@@ -65,18 +80,15 @@ function buildServer(): McpServer {
 
   server.tool(
     "seal_evidence",
-    "Append a hash-chained entry to the tamper-evident ledger. For EXPLOITED/CLEAN, pass the captured request+response (stored content-addressed, credentials redacted at any depth; EXPLOITED is rejected unless the response is 2xx with a non-empty body). For APPROVAL, pass approver + approves_entry_hash (the entry_hash of the finding a human approved); no request/response. Returns the new entry_hash.",
+    "Append a hash-chained entry to the tamper-evident ledger. For EXPLOITED/CLEAN, pass the full set of `probes` (each a complete HTTP exchange + auth_context + expected deny/allow). The server independently AUDITS the probes on a different model family and refuses to seal unless the audit passes — there is no caller-supplied auditor_ok. Credentials are redacted at any depth before hashing/storing. For APPROVAL, pass approver + approves_entry_hash (the finding a human approved); no probes. Returns the new entry_hash (or an error if the audit did not pass — treat that as INCONCLUSIVE).",
     {
       target_repo: z.string(),
       pr_number: z.number().int().nullish(),
       route: z.string().nullish(),
       verdict: z.enum(["EXPLOITED", "CLEAN", "APPROVAL"]),
-      request: evidenceRequest.optional(),
-      response: evidenceResponse.optional(),
-      auditor_ok: z.boolean().nullish(),
-      // For APPROVAL only. NOTE: an APPROVAL entry is meant to be sealed by the authenticated
-      // approval handler (the dashboard), which supplies `approver` from its trusted session — not
-      // by the main agent from model-supplied arguments. See .agent/GATE.md.
+      probes: z.array(probeSchema).optional(),
+      // For APPROVAL only. NOTE: an APPROVAL entry is sealed by the authenticated approval handler
+      // (the dashboard), which supplies `approver` from its trusted session — not the main agent.
       approver: z.string().nullish(),
       approves_entry_hash: z
         .string()
@@ -90,49 +102,13 @@ function buildServer(): McpServer {
           pr_number: input.pr_number ?? null,
           route: input.route ?? null,
           verdict: input.verdict,
-          request: input.request,
-          response: input.response,
-          auditor_ok: input.auditor_ok ?? null,
+          probes: input.probes,
           approver: input.approver ?? null,
           approves_entry_hash: input.approves_entry_hash ?? null,
         },
         stores.ledger,
         stores.artifacts,
-      );
-      return { content: [{ type: "text", text: JSON.stringify(result) }] };
-    },
-  );
-
-  server.tool(
-    "audit_finding",
-    "Independently audit an EXPLOITED/CLEAN finding on a DIFFERENT model family than the main agent (the writer is never its own verifier). Runs objective consistency checks, then a single cheap different-family model confirms the captured evidence supports the verdict. Returns { auditor_ok, reason, checks, model }. The main agent must not seal or post until auditor_ok is true.",
-    {
-      verdict: z.enum(["EXPLOITED", "CLEAN"]),
-      route: z.string().nullish(),
-      request: z.object({
-        method: z.string(),
-        url: z.string().optional(),
-        path: z.string().optional(),
-        headers: z.record(z.string(), z.unknown()).optional(),
-        body: z.unknown().optional(),
-      }),
-      response: z.object({
-        status: z.number().int(),
-        headers: z.record(z.string(), z.unknown()).optional(),
-        body: z.unknown().optional(),
-      }),
-    },
-    async (input) => {
-      if (!OPENROUTER_API_KEY) {
-        // Fail closed: without the independent model we cannot confirm, so we never approve.
-        const result = { auditor_ok: false, reason: "auditor model not configured (OPENROUTER_API_KEY missing)", checks: [], model: AUDITOR_MODEL };
-        return { content: [{ type: "text", text: JSON.stringify(result) }] };
-      }
-      const modelCall = makeOpenRouterCall({ model: AUDITOR_MODEL, apiKey: OPENROUTER_API_KEY, baseUrl: OPENROUTER_BASE_URL });
-      const result = await auditFinding(
-        { verdict: input.verdict, route: input.route ?? null, request: input.request, response: input.response },
-        modelCall,
-        AUDITOR_MODEL,
+        auditor,
       );
       return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },

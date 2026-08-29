@@ -3,38 +3,27 @@ import { z } from "zod";
 import { canonicalJson } from "./canonicalJson.js";
 import { GENESIS_PREV_HASH, sha256Hex } from "./hash.js";
 import { redactDeep } from "./redact.js";
+import type { AuditFindingInput, AuditResult, Probe } from "./auditor.js";
 import type { ArtifactStore, LedgerStore } from "../storage/types.js";
 
 export type Verdict = "EXPLOITED" | "CLEAN" | "APPROVAL";
-
-// A captured HTTP exchange. Structured so seal_evidence can verify a verdict against real evidence
-// instead of rubber-stamping a caller-supplied string.
-export interface EvidenceRequest {
-  method: string;
-  path?: string;
-  url?: string;
-  headers?: Record<string, unknown>;
-  body?: unknown;
-}
-export interface EvidenceResponse {
-  status: number;
-  headers?: Record<string, unknown>;
-  body?: unknown;
-}
 
 export interface SealInput {
   target_repo: string;
   pr_number: number | null;
   route: string | null;
   verdict: Verdict;
-  // request/response are the captured exchange for EXPLOITED/CLEAN. APPROVAL entries have none.
-  request?: EvidenceRequest;
-  response?: EvidenceResponse;
-  auditor_ok: boolean | null;
+  // EXPLOITED/CLEAN: the full set of probes; the server audits these and records them. There is no
+  // caller-supplied auditor_ok — the audit runs inside the seal (below), so it cannot be forged.
+  probes?: Probe[];
   approver: string | null;
   // For APPROVAL: the entry_hash of the finding a human approved (who approved what).
   approves_entry_hash?: string | null;
 }
+
+// The injected independent auditor. seal refuses to append an EXPLOITED/CLEAN entry unless this
+// returns auditor_ok, so `auditor_ok` is computed server-side here, never a caller-supplied boolean.
+export type Auditor = (input: AuditFindingInput) => Promise<AuditResult>;
 
 export interface LedgerEntry {
   id: string;
@@ -43,14 +32,15 @@ export interface LedgerEntry {
   pr_number: number | null;
   route: string | null;
   verdict: Verdict;
-  request: unknown; // redacted evidence (null for APPROVAL)
-  response: unknown; // redacted evidence (null for APPROVAL)
-  artifact_key: string | null;
+  request: unknown; // redacted primary probe (null for APPROVAL)
+  response: unknown; // redacted primary probe (null for APPROVAL)
+  artifact_key: string | null; // canonical redacted probe set (null for APPROVAL)
   auditor_ok: boolean | null;
+  // Optional so legacy rows written before these fields existed still validate and hash the same
+  // (never injected into an entry that did not carry them). New rows always write them.
+  auditor_model?: string | null;
+  auditor_reason?: string | null;
   approver: string | null;
-  // Optional so legacy rows written before this field existed still validate and hash the same
-  // (we never inject it into an entry that did not carry it). New rows always write it (null for
-  // non-APPROVAL).
   approves_entry_hash?: string | null;
   prev_hash: string;
   entry_hash: string;
@@ -75,8 +65,10 @@ export const LedgerEntrySchema = z.object({
   response: z.unknown(),
   artifact_key: z.string().nullable(),
   auditor_ok: z.boolean().nullable(),
-  approver: z.string().nullable(),
   // Backward-compatible: absent on legacy rows (accepted, not injected), null/string on new rows.
+  auditor_model: z.string().nullable().optional(),
+  auditor_reason: z.string().nullable().optional(),
+  approver: z.string().nullable(),
   approves_entry_hash: z.string().nullable().optional(),
   prev_hash: z.string().length(64),
   entry_hash: z.string().length(64),
@@ -96,17 +88,17 @@ function bodyHasData(body: unknown): boolean {
   return true; // number / boolean
 }
 
-// An EXPLOITED verdict may only be sealed with a complete exchange that actually returned data:
-// a 2xx response with a non-empty body. This is the "never claim success without checking" rule
-// enforced at the seal boundary (CONVENTIONS §3), not just in the SKILL prose.
-function assertVerdictEvidence(verdict: Verdict, response: EvidenceResponse): void {
-  if (verdict !== "EXPLOITED") return;
-  if (response.status < 200 || response.status >= 300) {
-    throw new Error("EXPLOITED requires a 2xx response (the probe must have returned data)");
+// The decisive probe to surface as the entry's request/response (the "money shot"). For EXPLOITED
+// it is the violation (a should-be-denied caller that got data); for CLEAN a rejected deny probe.
+function primaryProbe(probes: Probe[], verdict: "EXPLOITED" | "CLEAN"): Probe | undefined {
+  if (verdict === "EXPLOITED") {
+    return (
+      probes.find(
+        (p) => p.expected === "deny" && p.response.status >= 200 && p.response.status < 300 && bodyHasData(p.response.body),
+      ) ?? probes[0]
+    );
   }
-  if (!bodyHasData(response.body)) {
-    throw new Error("EXPLOITED requires a non-empty response body (data that should not have been returned)");
-  }
+  return probes.find((p) => p.expected === "deny") ?? probes[0];
 }
 
 // Serialize all seal operations in this process so tip-selection + append is atomic and two
@@ -117,8 +109,9 @@ export function sealEvidence(
   input: SealInput,
   ledger: LedgerStore,
   artifacts: ArtifactStore,
+  auditor: Auditor,
 ): Promise<{ entry_hash: string }> {
-  const run = sealQueue.then(() => doSeal(input, ledger, artifacts));
+  const run = sealQueue.then(() => doSeal(input, ledger, artifacts, auditor));
   sealQueue = run.then(
     () => undefined,
     () => undefined,
@@ -130,11 +123,15 @@ async function doSeal(
   input: SealInput,
   ledger: LedgerStore,
   artifacts: ArtifactStore,
+  auditor: Auditor,
 ): Promise<{ entry_hash: string }> {
   let request: unknown = null;
   let response: unknown = null;
   let artifact_key: string | null = null;
   let approves_entry_hash: string | null = null;
+  let auditor_ok: boolean | null = null;
+  let auditor_model: string | null = null;
+  let auditor_reason: string | null = null;
 
   // Read the chain once — used for the tip AND (for APPROVAL) to resolve the referenced finding.
   const rows = await ledger.read();
@@ -164,14 +161,27 @@ async function doSeal(
     }
     approves_entry_hash = input.approves_entry_hash;
   } else {
-    if (!input.request || !input.response) {
-      throw new Error(`${input.verdict} requires a captured request and response`);
+    const probes = input.probes ?? [];
+    if (probes.length === 0) {
+      throw new Error(`${input.verdict} requires at least one probe`);
     }
-    assertVerdictEvidence(input.verdict, input.response);
-    // Redact the ENTIRE evidence (request + response, any depth) before hashing or storing.
-    request = redactDeep(input.request);
-    response = redactDeep(input.response);
-    const artifactBytes = Buffer.from(canonicalJson({ request, response }), "utf8");
+    // AUDIT INSIDE THE SEAL — the gate. The independent auditor (different model family) runs here,
+    // so auditor_ok is computed server-side and cannot be a forged caller boolean. If the audit
+    // does not pass, we refuse to append (the finding is INCONCLUSIVE for the caller).
+    const audit = await auditor({ verdict: input.verdict, route: input.route, probes });
+    if (!audit.auditor_ok) {
+      throw new Error(`independent audit did not pass: ${audit.reason}`);
+    }
+    auditor_ok = true;
+    auditor_model = audit.model;
+    auditor_reason = audit.reason;
+
+    // Redact the ENTIRE probe set (any depth) before hashing or storing.
+    const redactedProbes = probes.map((p) => redactDeep(p));
+    const primary = primaryProbe(redactedProbes, input.verdict);
+    request = primary?.request ?? null;
+    response = primary?.response ?? null;
+    const artifactBytes = Buffer.from(canonicalJson({ probes: redactedProbes }), "utf8");
     artifact_key = await artifacts.put(artifactBytes);
   }
 
@@ -187,7 +197,9 @@ async function doSeal(
     request,
     response,
     artifact_key,
-    auditor_ok: input.auditor_ok,
+    auditor_ok,
+    auditor_model,
+    auditor_reason,
     approver: input.approver,
     approves_entry_hash,
     prev_hash,

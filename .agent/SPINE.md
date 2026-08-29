@@ -41,9 +41,13 @@ so the spine is reproducible.
    skill tells the agent to install Node before booting vulnbank (proven in spike 02). Skills require
    `config.sandbox.enabled: true`.
 
-**Auditor (PR 6):** TrueForge's dynamic subagents are on by default, so the main agent already
-spawns a subagent to audit before sealing (observed: `create_sub_agent` → `auditor_ok: true`). PR 6
-pins that auditor to a *different model family* (`openai/gpt-5.6-sol-pro`) for true independence.
+**Auditor (PR 6):** TrueForge's dynamic subagents can't be pinned to a specific model
+(`DynamicSubAgentsConfig` only has `enabled`), so a spawned subagent inherits the writer's family —
+not independent. Instead the audit lives **inside `seal_evidence`** (attesta-mcp): it independently
+audits the probes on a **different model family** (`AUDITOR_MODEL`, default cheap `z-ai/glm-5.3-flash`
+vs `WRITER_MODEL` DeepSeek; independence is enforced) and refuses to seal unless the audit passes.
+attesta-mcp therefore needs `OPENROUTER_API_KEY` in its env (run it as
+`OPENROUTER_API_KEY=… npm start`).
 
 ## Run the demo (TrueForge chat)
 

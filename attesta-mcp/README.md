@@ -6,9 +6,8 @@ confirmed in spike 01). Three tools are planned:
 | Tool | Status | Purpose |
 |---|---|---|
 | `scope_surface(diff)` | **implemented** | new HTTP routes a PR introduces + whether each has auth |
-| `seal_evidence(finding)` | **implemented** | append a hash-chained entry to the ledger + store the artifact |
+| `seal_evidence(finding)` | **implemented** | independently audit (different model family) then append a hash-chained entry + store the artifact |
 | `verify_ledger()` | **implemented** | recompute the chain and re-read artifact bytes |
-| `audit_finding(finding)` | **implemented** | independent audit on a different model family before sealing |
 
 ## Run
 
@@ -55,12 +54,15 @@ executed, never interpolated into any sink.
 ## `seal_evidence(finding) -> { entry_hash }`
 
 Appends a hash-chained entry to the ledger.
-- **EXPLOITED / CLEAN** — pass the captured `request` + `response`; the artifact is stored
-  content-addressed and `Authorization`/`Cookie`/`x-api-key` values are redacted (any depth) before
-  anything is stored or hashed. `EXPLOITED` is rejected unless the response is 2xx with a non-empty body.
+- **EXPLOITED / CLEAN** — pass the full **`probes`** set (each a complete HTTP exchange + `auth_context`
+  + `expected` deny/allow). The server **independently audits the probes on a different model family
+  first (see below) and refuses to seal unless the audit passes** — there is no caller-supplied
+  `auditor_ok`, so it can't be forged. Credentials are redacted (any depth) before anything is hashed
+  or stored; the redacted probe set is the content-addressed artifact, and the decisive probe is
+  stored as the entry's request/response.
 - **APPROVAL** — pass `approver` + `approves_entry_hash` (the `entry_hash` of the finding a human
-  approved). No request/response; records who approved which finding, and when. So the approval
-  itself is sealed into the same tamper-evident chain.
+  approved). No probes; records who approved which finding, and when — the approval itself is sealed
+  into the same tamper-evident chain.
 
 Hashing contract (one function, `lib/canonicalJson.ts` + `lib/hash.ts`):
 
@@ -76,22 +78,26 @@ Recomputes the chain from genesis **and re-reads + re-hashes each artifact's byt
 trusts the stored row. `broken_at` is the id of the first tampered entry (or `null`). A mutated
 ledger row, a mutated artifact, or a missing artifact all fail verification.
 
-## `audit_finding(finding) -> { auditor_ok, reason, checks, model }`
+## The independent audit (inside `seal_evidence`)
 
-The independent auditor — "the writer is never its own verifier". Two layers, in the style of a
-structured code reviewer (rubric-driven, evidence-linked pass/fail checks):
+"The writer is never its own verifier." `seal_evidence` audits before it appends. Two layers, in the
+style of a structured code reviewer (rubric-driven, evidence-linked pass/fail checks):
 
-1. **Deterministic checks** (no model, cheap): objective consistency between the captured evidence
-   and the verdict — request+response present; EXPLOITED ⟹ 2xx + non-empty body; CLEAN ⟹ 401/403.
-   If these fail, the model is never called and `auditor_ok` is false.
-2. **A single call to a DIFFERENT model family** (`AUDITOR_MODEL`, default `z-ai/glm-5.3-flash` while
-   the main agent is DeepSeek — cheap, and a genuinely different family per TOOLS.md §3) that judges,
-   against an explicit rubric, whether the evidence supports the verdict.
+1. **Deterministic checks** (no model, cheap): objective consistency between the probes and the
+   verdict — every probe is a complete exchange; **EXPLOITED** ⟹ a should-be-denied caller received a
+   2xx with protected data (forbidden data, not merely non-empty); **CLEAN** ⟹ coverage (≥1 deny
+   probe) + every deny probe rejected (401/403) + no violations. If these fail, the model is never
+   called and the audit fails.
+2. **One call to a DIFFERENT model family** — `AUDITOR_MODEL` (default `z-ai/glm-5.3-flash`; cheap and
+   a genuinely different family from the writer, `WRITER_MODEL`, default DeepSeek). **Independence is
+   enforced**, not assumed: if the auditor and writer resolve to the same provider family, the audit
+   fails. Evidence is redacted before it reaches the model and treated as untrusted (the model can
+   only *veto*, never approve on its own — so a hostile response body can't force approval).
 
-`auditor_ok` is true only if both agree. It **fails closed**: if the model call errors or
-`OPENROUTER_API_KEY` is unset, `auditor_ok` is false (never a rubber stamp). Needs
-`OPENROUTER_API_KEY` in attesta-mcp's env; the auditor model **must** be a different family than the
-main agent.
+The audit passes only if **both** layers agree. It **fails closed**: missing `OPENROUTER_API_KEY`,
+same family, a model error, or a malformed/contradictory model reply all cause the seal to be refused
+(never a rubber stamp), and upstream error text is never surfaced. Needs `OPENROUTER_API_KEY` and
+(optionally) `AUDITOR_MODEL` / `WRITER_MODEL` in attesta-mcp's env.
 
 ## Storage
 
