@@ -3,6 +3,27 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { scopeSurface } from "./lib/scopeSurface.js";
+import { sealEvidence, verifyLedger } from "./lib/ledger.js";
+import { getStores } from "./storage/factory.js";
+
+// One shared storage backend for the process (local FS by default; see storage/factory.ts).
+const stores = getStores();
+
+// A captured HTTP exchange. Structured so seal_evidence can verify a verdict against real evidence.
+const evidenceRequest = z
+  .object({
+    method: z.string(),
+    path: z.string().optional(),
+    url: z.string().optional(),
+    headers: z.record(z.string(), z.unknown()).optional(),
+    body: z.unknown().optional(),
+  })
+  .refine((r) => Boolean(r.path ?? r.url), { message: "request needs a path or url" });
+const evidenceResponse = z.object({
+  status: z.number().int(),
+  headers: z.record(z.string(), z.unknown()).optional(),
+  body: z.unknown().optional(),
+});
 
 const PORT = process.env.ATTESTA_MCP_PORT ? Number(process.env.ATTESTA_MCP_PORT) : 8130;
 // Bind to loopback by default (unauthenticated local dev server). Override only for a deployment
@@ -30,6 +51,48 @@ function buildServer(): McpServer {
     { diff: z.string().describe("unified diff text of the pull request") },
     async ({ diff }) => {
       const result = scopeSurface(diff);
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.tool(
+    "seal_evidence",
+    "Append a hash-chained entry to the tamper-evident ledger and store the request/response artifact content-addressed. Credentials are redacted (any depth) before storing. An EXPLOITED verdict is rejected unless the response is 2xx with a non-empty body. Returns the new entry_hash.",
+    {
+      target_repo: z.string(),
+      pr_number: z.number().int().nullish(),
+      route: z.string().nullish(),
+      verdict: z.enum(["EXPLOITED", "CLEAN", "APPROVAL"]),
+      request: evidenceRequest,
+      response: evidenceResponse,
+      auditor_ok: z.boolean().nullish(),
+      approver: z.string().nullish(),
+    },
+    async (input) => {
+      const result = await sealEvidence(
+        {
+          target_repo: input.target_repo,
+          pr_number: input.pr_number ?? null,
+          route: input.route ?? null,
+          verdict: input.verdict,
+          request: input.request,
+          response: input.response,
+          auditor_ok: input.auditor_ok ?? null,
+          approver: input.approver ?? null,
+        },
+        stores.ledger,
+        stores.artifacts,
+      );
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.tool(
+    "verify_ledger",
+    "Recompute the ledger hash chain from genesis and re-read + re-hash each stored artifact's bytes. Returns { valid, length, broken_at }. broken_at is the id of the first tampered entry, or null.",
+    {},
+    async () => {
+      const result = await verifyLedger(stores.ledger, stores.artifacts);
       return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },
   );

@@ -24,6 +24,9 @@ yarn-error.log*
 *.sqlite
 db.sqlite
 
+# attesta-mcp local ledger + artifact store (runtime data)
+attesta-mcp/data/
+
 # OS / editor
 .DS_Store
 Thumbs.db

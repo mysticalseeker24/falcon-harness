@@ -37,6 +37,7 @@ test("vuln diff: one new route, auth absent, correct method/path/line", () => {
   assert.equal(r.method, "GET");
   assert.equal(r.path, "/admin/balances");
   assert.equal(r.auth_present, false);
+  assert.equal(r.handler, "inline");
   assert.equal(r.source_line, 21);
 });
 
@@ -44,6 +45,18 @@ test("safe diff: same route but auth present", () => {
   const { routes } = scopeSurface(SAFE_DIFF);
   assert.equal(routes.length, 1);
   assert.equal(routes[0].path, "/admin/balances");
+  assert.equal(routes[0].auth_present, true);
+});
+
+test("arrow handler is 'inline' even with preceding middleware (#8)", () => {
+  // The safe route has authMiddleware + requireAdmin before the arrow callback.
+  assert.equal(scopeSurface(SAFE_DIFF).routes[0].handler, "inline");
+});
+
+test("a named handler is reported by name (#8)", () => {
+  const diff = `@@ -1,0 +1,1 @@\n+app.get("/x", authMiddleware, myHandler);`;
+  const { routes } = scopeSurface(diff);
+  assert.equal(routes[0].handler, "myHandler");
   assert.equal(routes[0].auth_present, true);
 });
 
