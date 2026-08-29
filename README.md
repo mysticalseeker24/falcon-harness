@@ -33,7 +33,7 @@ primary path fails, take the named fallback and note it here.
 | # | Unknown | Result | Decision / fallback taken | Date |
 |---|---|---|---|---|
 | 1 | Custom MCP server registers + one tool call round-trips | **PASS** | Streamable HTTP; registered as `mcp-ping`, harness discovered the tool, agent invoked it and got `pong`/echo/timestamp. No fallback needed. | 2026-08-29 |
-| 2 | One Daytona sandbox boots the app **and** probes it on localhost | PENDING | — | — |
+| 2 | One Daytona sandbox boots the app **and** probes it on localhost | **PASS** | Single sandbox: agent wrote the app, booted it, and read `/data` (200, secret) via both curl and a self-generated Node probe on localhost. No Render fallback. **Note:** base image ships no Node — agent installed Node 22.14 itself; real vulnbank boot must install Node in-sandbox (or use a Node image). | 2026-08-29 |
 | 3 | Dashboard reads + actions a pending approval over the TrueForge SDK | PENDING | — | — |
 
 Fallbacks (from the spec): (1) if Streamable-HTTP registration fails, match the transport
