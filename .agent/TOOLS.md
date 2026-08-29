@@ -88,19 +88,24 @@ entry_hash    char(64) not null
 
 One OpenRouter key. Base URL `https://openrouter.ai/api/v1` (OpenAI-compatible). Configure all three in TrueForge's model catalog by slug.
 
+Slugs below are the ones actually configured in TrueForge and each verified reachable with a live
+1-token call (HTTP 200) against our key on 2026-08-29. The `:exacto` suffix is OpenRouter's Exacto
+routing (gotcha 2) applied at request time — it is a routing variant, not a separate catalog entry,
+so it does not appear in `/models`; the call returns the base model with Exacto routing.
+
 | Role | Model | Slug | Family | Notes |
 |---|---|---|---|---|
-| **Main agent** (planner/prober/writer) | DeepSeek V4 Pro 0813 | `deepseek/deepseek-v4-pro-0813` | DeepSeek | Built for long-horizon agent workflows + multi-step automation; 1M ctx; strong function calling. **Verify the exact `-0813` slug on the OpenRouter model page** (base is `deepseek/deepseek-v4-pro`). |
-| **Auditor subagent** (independent verifier) | GPT-5.6 Sol Pro | `openai/gpt-5.6-sol-pro` | OpenAI | Flagship reasoning; makes the independence claim credible. Few calls, cost negligible. |
-| **Dev iteration + fast/cheap steps** | GLM-5.3-Flash | `z-ai/glm-5.3-flash` | Z.ai | ~$0.075–0.15 in / $0.25–0.50 out; fast. Use for debugging the loop cheaply, then switch main agent to DeepSeek for demo + bench. |
+| **Main agent** (planner/prober/writer) | DeepSeek V4 Pro 0813 | `deepseek/deepseek-v4-pro-0813:exacto` | DeepSeek | Built for long-horizon agent workflows + multi-step automation; 1M ctx; strong function calling. Exacto suffix for tool-calling accuracy. Base slug verified valid on OpenRouter. |
+| **Auditor subagent** (independent verifier) | GPT-5.6 Sol Pro | `openai/gpt-5.6-sol-pro` | OpenAI | Flagship reasoning; makes the independence claim credible. Few calls, cost negligible. No `:exacto` — the auditor does not call tools, so routing tuning is unnecessary. |
+| **Dev iteration + fast/cheap steps** | GLM-5.3-Flash | `z-ai/glm-5.3-flash:exacto` | Z.ai | ~$0.075–0.15 in / $0.25–0.50 out; fast. Current **main agent while spiking** (cheap); switch main to DeepSeek for demo + bench. |
 
 ### Independence guarantee
 Main agent family ≠ auditor family, always. DeepSeek (main) vs OpenAI (auditor) is clean. If you ever swap the main agent to GLM for a run, the auditor must be DeepSeek or OpenAI, never GLM.
 
 ### OpenRouter gotchas (these cause the intermittent failures)
 1. **Pin providers.** GLM is served by many providers with a 2x price spread and context ceilings from 262K to 1.31M; default routing can silently hand you a 262K-context provider and a long request then fails. Pin Z.AI or GMICloud for GLM. Same discipline for the others.
-2. **Use OpenRouter "Exacto" routing for the main agent** (optimizes for tool-calling accuracy). The main loop must reliably call scope_surface, sandbox tools, seal_evidence, and the GitHub merge; a dropped tool call is the likeliest cause of a flaky demo.
-3. **Verify the DeepSeek slug** before wiring (one-minute check on its model page).
+2. **Use OpenRouter "Exacto" routing for the main agent** (optimizes for tool-calling accuracy). The main loop must reliably call scope_surface, sandbox tools, seal_evidence, and the GitHub merge; a dropped tool call is the likeliest cause of a flaky demo. **Done:** applied via the `:exacto` slug suffix on both main-agent-capable models (DeepSeek + GLM); the auditor stays plain.
+3. **Verify the DeepSeek slug** before wiring (one-minute check on its model page). **Done (2026-08-29):** `deepseek/deepseek-v4-pro-0813` and `z-ai/glm-5.3-flash` both return HTTP 200 on a live call; `:exacto` variants of each also 200.
 
 ---
 
