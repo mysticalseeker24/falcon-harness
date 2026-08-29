@@ -27,10 +27,13 @@ export interface SealInput {
   pr_number: number | null;
   route: string | null;
   verdict: Verdict;
-  request: EvidenceRequest;
-  response: EvidenceResponse;
+  // request/response are the captured exchange for EXPLOITED/CLEAN. APPROVAL entries have none.
+  request?: EvidenceRequest;
+  response?: EvidenceResponse;
   auditor_ok: boolean | null;
   approver: string | null;
+  // For APPROVAL: the entry_hash of the finding a human approved (who approved what).
+  approves_entry_hash?: string | null;
 }
 
 export interface LedgerEntry {
@@ -40,11 +43,12 @@ export interface LedgerEntry {
   pr_number: number | null;
   route: string | null;
   verdict: Verdict;
-  request: unknown; // redacted evidence
-  response: unknown; // redacted evidence
+  request: unknown; // redacted evidence (null for APPROVAL)
+  response: unknown; // redacted evidence (null for APPROVAL)
   artifact_key: string | null;
   auditor_ok: boolean | null;
   approver: string | null;
+  approves_entry_hash: string | null;
   prev_hash: string;
   entry_hash: string;
 }
@@ -69,6 +73,7 @@ export const LedgerEntrySchema = z.object({
   artifact_key: z.string().nullable(),
   auditor_ok: z.boolean().nullable(),
   approver: z.string().nullable(),
+  approves_entry_hash: z.string().nullable(),
   prev_hash: z.string().length(64),
   entry_hash: z.string().length(64),
 });
@@ -122,14 +127,29 @@ async function doSeal(
   ledger: LedgerStore,
   artifacts: ArtifactStore,
 ): Promise<{ entry_hash: string }> {
-  assertVerdictEvidence(input.verdict, input.response);
+  let request: unknown = null;
+  let response: unknown = null;
+  let artifact_key: string | null = null;
+  let approves_entry_hash: string | null = null;
 
-  // Redact the ENTIRE evidence (request + response, any depth) before hashing or storing.
-  const request = redactDeep(input.request);
-  const response = redactDeep(input.response);
-
-  const artifactBytes = Buffer.from(canonicalJson({ request, response }), "utf8");
-  const artifact_key = await artifacts.put(artifactBytes);
+  if (input.verdict === "APPROVAL") {
+    // An approval records who approved which sealed finding — not an HTTP exchange.
+    if (!input.approver) throw new Error("APPROVAL requires an approver");
+    if (!input.approves_entry_hash) {
+      throw new Error("APPROVAL must reference the approved finding (approves_entry_hash)");
+    }
+    approves_entry_hash = input.approves_entry_hash;
+  } else {
+    if (!input.request || !input.response) {
+      throw new Error(`${input.verdict} requires a captured request and response`);
+    }
+    assertVerdictEvidence(input.verdict, input.response);
+    // Redact the ENTIRE evidence (request + response, any depth) before hashing or storing.
+    request = redactDeep(input.request);
+    response = redactDeep(input.response);
+    const artifactBytes = Buffer.from(canonicalJson({ request, response }), "utf8");
+    artifact_key = await artifacts.put(artifactBytes);
+  }
 
   const rows = await ledger.read();
   const tip = rows.at(-1);
@@ -150,6 +170,7 @@ async function doSeal(
     artifact_key,
     auditor_ok: input.auditor_ok,
     approver: input.approver,
+    approves_entry_hash,
     prev_hash,
   };
 

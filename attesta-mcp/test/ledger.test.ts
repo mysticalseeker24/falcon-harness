@@ -183,6 +183,49 @@ test("a malformed ledger row is reported as corruption, not thrown (#7)", async 
   assert.equal(v.length, 2);
 });
 
+test("APPROVAL seals who approved which finding, with no HTTP artifact", async () => {
+  const s = await freshStores();
+  const finding = await sealEvidence(sample("CLEAN"), s.ledger, s.artifacts);
+  const appr = await sealEvidence(
+    {
+      target_repo: "DevLab-mgc/vulnbank",
+      pr_number: 4,
+      route: "/admin/balances",
+      verdict: "APPROVAL",
+      auditor_ok: null,
+      approver: "alice@example.com",
+      approves_entry_hash: finding.entry_hash,
+    },
+    s.ledger,
+    s.artifacts,
+  );
+  const es = await entries(s.ledger);
+  assert.equal(es.length, 2);
+  const a = es[1];
+  assert.equal(a.entry_hash, appr.entry_hash);
+  assert.equal(a.verdict, "APPROVAL");
+  assert.equal(a.approver, "alice@example.com");
+  assert.equal(a.approves_entry_hash, finding.entry_hash);
+  assert.equal(a.request, null);
+  assert.equal(a.response, null);
+  assert.equal(a.artifact_key, null);
+  assert.deepEqual(await verifyLedger(s.ledger, s.artifacts), { valid: true, length: 2, broken_at: null });
+});
+
+test("APPROVAL requires approver and approves_entry_hash", async () => {
+  const s = await freshStores();
+  const base = { target_repo: "r", pr_number: 1, route: null, verdict: "APPROVAL" as const, auditor_ok: null };
+  await assert.rejects(
+    sealEvidence({ ...base, approver: null, approves_entry_hash: "abc" }, s.ledger, s.artifacts),
+    /approver/,
+  );
+  await assert.rejects(
+    sealEvidence({ ...base, approver: "x", approves_entry_hash: null }, s.ledger, s.artifacts),
+    /approves_entry_hash/,
+  );
+  assert.equal((await s.ledger.read()).length, 0);
+});
+
 test("empty ledger verifies as valid, length 0", async () => {
   const s = await freshStores();
   assert.deepEqual(await verifyLedger(s.ledger, s.artifacts), { valid: true, length: 0, broken_at: null });
