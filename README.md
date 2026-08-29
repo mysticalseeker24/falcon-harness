@@ -32,7 +32,7 @@ primary path fails, take the named fallback and note it here.
 
 | # | Unknown | Result | Decision / fallback taken | Date |
 |---|---|---|---|---|
-| 1 | Custom MCP server registers + one tool call round-trips | PENDING | — | — |
+| 1 | Custom MCP server registers + one tool call round-trips | **PASS** | Streamable HTTP; registered as `mcp-ping`, harness discovered the tool, agent invoked it and got `pong`/echo/timestamp. No fallback needed. | 2026-08-29 |
 | 2 | One Daytona sandbox boots the app **and** probes it on localhost | PENDING | — | — |
 | 3 | Dashboard reads + actions a pending approval over the TrueForge SDK | PENDING | — | — |
 
