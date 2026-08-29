@@ -23,10 +23,13 @@ so the spine is reproducible.
    It exposes `scope_surface`, `seal_evidence`, `verify_ledger`.
 
 2. **Add GitHub MCP** → Settings → Connectors. Auth: a GitHub fine-grained token scoped to
-   `DevLab-mgc/vulnbank` — permissions **Contents (R/W)**, **Pull requests (R/W)**, **Issues (R/W)**,
-   **Metadata (R)**. Give the agent the tools it needs: `pull_request_read` (diff), `add_issue_comment`
-   (proof comment), and `merge_pull_request` (the approval-gated merge). Store the token in the
-   harness, never in the repo.
+   `DevLab-mgc/vulnbank`, least-privilege per operation:
+   - **Contents: Read and write** — `merge_pull_request` (the merge creates a commit).
+   - **Issues: Read and write** — `add_issue_comment` (PR comments post via the issues API).
+   - **Pull requests: Read** — `pull_request_read` (read the PR + diff; read-only).
+   - **Metadata: Read** — mandatory, auto-selected.
+
+   Store the token in the harness, never in the repo.
 
 3. **Import the skill** → Settings → Skills → Import from GitHub → repo
    `mysticalseeker24/falcon-harness`, **`path` left empty (repo root — `SKILL.md` lives at the root)**,
@@ -55,10 +58,12 @@ false` → the agent boots vulnbank, sends a no-`Authorization` request → `200
 balances → **EXPLOITED**, with the request/response captured. On the **safe** PR (#4): same route,
 `auth_present: true` → no-token `401`, non-admin `403` → **CLEAN**.
 
-**Verified live (2026-08-29):** the full loop ran end-to-end against real PR #3 with DeepSeek —
-fetch → scope → boot (health `200 {"ok":true}`) → probe (no-token/wrong-tenant/wrong-role all `200`)
-→ subagent audit (`auditor_ok: true`) → `seal_evidence` (`entry_hash 278a7085…`, genesis link) →
-`verify_ledger` `valid`. Not yet run as a repeatable `bench` (PR 10); this is a single observed run.
+**Observed once — manual, not a verified result (2026-08-29):** a single manual run drove the full
+loop against real PR #3 with DeepSeek (fetch → scope → boot → probe → subagent audit → seal →
+verify). Treat this as an **anecdotal observation, not a measured claim** — there is no runnable
+check behind it yet. The repeatable, self-checking verification is **`bench` (PR 10)**, which runs
+all branches ×3 and exits non-zero on any wrong verdict. Do not cite this run as a benchmark or a
+headline number anywhere until `bench` measures it (CONVENTIONS §8).
 
 ## Scope of PR 4 vs later PRs
 
