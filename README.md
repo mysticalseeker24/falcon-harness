@@ -2,7 +2,7 @@
 
 **A diff-scoped exploitation agent built on TrueForge.** Falcon reads a pull request, works out the new attack surface the change introduced, boots the app in an isolated sandbox, runs a real exploit against only that surface, and returns a request, a response, and a verdict — a proven fact, not a severity guess. A second model family independently audits the claim before it is sealed into a tamper-evident, hash-chained ledger. If the change is clean and a human approves, Falcon merges it; if it is exploitable, Falcon blocks the merge and posts the proof.
 
-> **Result:** _[headline number here after PR 10 — e.g. N planted flaws caught, 0 false alarms across M healthy controls, 3 runs each, all verdicts correct. Reproduce with `npm run bench`.]_
+> **Result:** 1 planted flaw caught, 0 false alarms across 1 healthy control, 3 runs each — all verdicts correct. Reproduce with `cd attesta-mcp && npm run bench` (it boots the real fixture, probes it, audits on a different model family, seals + verifies, and exits non-zero on any wrong verdict).
 
 Built for the TrueForge Agent Harness Hackathon (TrueForge + Qodo). TrueForge owns the agent loop, the sandbox, the approval gate, and the subagents; Falcon is the diff-scoped exploitation engine on top.
 
@@ -47,7 +47,30 @@ _[setup steps a stranger can follow — filled as built]_
 
 ## `npm run bench`
 
-_[what it does and the matrix it prints — filled in PR 10]_
+The product's own test of its headline claim — no asserted numbers, only measured ones.
+
+```bash
+cd attesta-mcp && npm run bench     # needs OPENROUTER_API_KEY (read from ../.env)
+```
+
+For each vulnbank demo branch, **×3**, it: boots the **real** fixture, probes it over HTTP,
+derives the verdict from the responses, runs the real attesta-mcp pipeline (`scope_surface` on the
+diff → audit on a **different model family** → `seal_evidence` → `verify_ledger`), prints a **verdict
+matrix**, and **exits non-zero if any verdict is wrong**. A failing `bench` is a build breakage.
+
+Measured run (2026-08-30):
+
+```
+scenario   run  expected     got          scope  seal              result
+vuln       1    EXPLOITED    EXPLOITED    ok     sealed+verified   PASS
+vuln       2    EXPLOITED    EXPLOITED    ok     sealed+verified   PASS
+vuln       3    EXPLOITED    EXPLOITED    ok     sealed+verified   PASS
+safe       1    CLEAN        CLEAN        ok     sealed+verified   PASS
+safe       2    CLEAN        CLEAN        ok     sealed+verified   PASS
+safe       3    CLEAN        CLEAN        ok     sealed+verified   PASS
+
+1 planted flaw caught, 0 false alarms across 1 healthy control, 3 runs each — all verdicts correct.
+```
 
 ---
 
