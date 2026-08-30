@@ -33,9 +33,12 @@ TrueForge owns the loop; Falcon is the four authored pieces that plug into it:
   `vulnbank`, and probes it on localhost (one sandbox boots *and* probes — de-risked in PR 1).
 - **Independent auditor** — runs *inside* `seal_evidence` on a **different model family** (GLM auditor
   vs DeepSeek writer); a deterministic gate the model can only veto, never rubber-stamp.
-- **Human-approval checkpoint** — the CLEAN path proposes the merge and pauses on TrueForge's
-  `tool.approval_required`; approval resumes it via `user.tool_approval`, and the approval is sealed to
-  the ledger **before** the irreversible merge fires (see [`.agent/GATE.md`](./.agent/GATE.md)).
+- **Human-approval checkpoint (designed flow)** — by design the CLEAN path pauses on TrueForge's
+  `tool.approval_required` and is resumed with a `user.tool_approval` item. Both halves exist and are
+  proven: that resume-over-the-SDK round-trip is PR 1's approval spike, and `seal_evidence` appends the
+  `APPROVAL` entry (sealed **before** the merge, [`.agent/GATE.md`](./.agent/GATE.md)). The end-to-end
+  authenticated handler that wires them together is the documented design — not a shipped automated
+  integration; the dashboard's Approve is a labelled replay of that decision.
 - **No secrets in our code** — model and GitHub credentials live in the harness; `attesta-mcp` and the
   dashboard hold none.
 
@@ -66,6 +69,9 @@ for the full harness run — a [Daytona](https://daytona.io) key. On Windows, ru
 cp .env.example .env                 # set OPENROUTER_API_KEY (+ DAYTONA_API_KEY for the live run)
 ```
 
+Each block below starts **from the repository root** (open a new shell, or `cd` back to root between
+them). `npm start` and `npm run bench` auto-load the root `.env`.
+
 **The proof, without the harness** — boot the fixture, run the real pipeline, measure the headline:
 
 ```bash
@@ -75,7 +81,7 @@ npm run bench                        # boots vulnbank ×3/branch, prints the ver
 npm start                            # (optional) MCP server on :8130 for the dashboard
 ```
 
-**The console** — the evidence surface, reading the real ledger:
+**The console** — the evidence surface, reading the real ledger (from the repo root):
 
 ```bash
 cd dashboard && npm install
