@@ -11,6 +11,8 @@ export function EvidenceDrawer({
   auditorModel: string;
   auditorOk: boolean | null;
 }) {
+  const is2xx = evidence != null && evidence.status >= 200 && evidence.status < 300;
+  const auth = evidence?.reqHeaders.authorization;
   return (
     <section className="panel">
       <div className="panel-head">
@@ -22,31 +24,28 @@ export function EvidenceDrawer({
           <div className="empty">Run Falcon to capture the request &amp; response.</div>
         ) : (
           <div className="evidence">
-            <div className="exch">
+            <div className="exch req">
               <div className="exch-head">
                 <span className="method">{evidence.method}</span>
-                <span className="mono" style={{ color: "var(--text-muted)", fontSize: 12 }}>
-                  {evidence.url}
-                </span>
+                <span className="exch-url">{evidence.url}</span>
               </div>
               <pre>
-                {`Authorization: ${evidence.reqHeaders.authorization ?? "(none — unauthenticated)"}\n\n` +
-                  (evidence.reqBody == null ? "(no request body)" : JSON.stringify(evidence.reqBody, null, 2))}
+                {"Authorization: "}
+                {auth ? <span className="redact">•••• redacted</span> : <span className="redact">(none — unauthenticated)</span>}
+                {"\n\n" + (evidence.reqBody == null ? "(no request body)" : JSON.stringify(evidence.reqBody, null, 2))}
               </pre>
             </div>
-            <div className="exch">
+            <div className={"exch " + (is2xx ? "leak" : "deny")}>
               <div className="exch-head">
-                <span className={"status-pill " + (evidence.status >= 200 && evidence.status < 300 ? "status-2xx" : "status-deny")}>
-                  {evidence.status}
-                </span>
+                <span className={"status-pill " + (is2xx ? "status-2xx" : "status-deny")}>{evidence.status}</span>
                 <span className="eyebrow">response</span>
+                <span className={"leak-tag " + (is2xx ? "leak" : "deny")}>{is2xx ? "data leaked" : "access denied"}</span>
               </div>
               <pre>{JSON.stringify(evidence.resBody, null, 2)}</pre>
             </div>
             {auditorOk != null ? (
               <div className="auditchip">
-                <span className="dot" /> Independently audited by{" "}
-                <b style={{ color: "var(--text)" }}>{short(auditorModel)}</b> (≠ writer family):{" "}
+                <span className="dot" /> Independently audited by <b>{short(auditorModel)}</b> (≠ writer family):{" "}
                 {auditorOk ? "confirmed" : "rejected"}
               </div>
             ) : null}
