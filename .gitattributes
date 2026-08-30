@@ -1,0 +1,6 @@
+# Hash-verified data: keep bytes stable across platforms so sha256 chains still validate after a
+# checkout. Artifacts are content-addressed (filename == sha256(bytes)) — treat as binary, never
+# convert. The JSONL ledgers are re-parsed on verify, but pin them to LF for byte-stability too.
+attesta-mcp/seed/artifacts/** -text
+attesta-mcp/seed/ledger.jsonl text eol=lf
+attesta-mcp/bench-results/latest.json text eol=lf

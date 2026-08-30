@@ -30,6 +30,10 @@ attesta-mcp/data/
 # bench: keep the committed result artifact (latest.json), never the internal error log
 attesta-mcp/bench-results/bench-error.log
 
+# seed: transient swap dirs from `npm run seed` (the committed seed/ is what ships)
+attesta-mcp/seed.tmp/
+attesta-mcp/seed.bak/
+
 # OS / editor
 .DS_Store
 Thumbs.db

@@ -8,17 +8,18 @@
     "start": "node --env-file-if-exists=../.env --import tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
-    "bench": "tsx bench.ts"
+    "bench": "tsx bench.ts",
+    "seed": "node --env-file-if-exists=../.env --import tsx scripts/seed.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
     "express": "5.2.1",
+    "tsx": "4.23.12",
     "zod": "4.5.2"
   },
   "devDependencies": {
     "@types/express": "5.0.6",
     "@types/node": "26.4.0",
-    "tsx": "4.23.12",
     "typescript": "7.0.2"
   }
 }
