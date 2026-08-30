@@ -13,8 +13,9 @@ export function TopBar({ ledgerLive = false }: { ledgerLive?: boolean }) {
         </div>
       </div>
       <p className="masthead-thesis">
-        <b>Falcon</b> reads a pull request, boots the target in a sandbox, and runs a real exploit — in
-        the TrueForge harness. This console renders the proof and verifies the tamper-evident ledger live.
+        Evidence console for <b>Falcon</b>, the diff-scoped exploitation agent. Falcon boots targets in a
+        sandbox and proves broken access control <b>inside the TrueForge harness</b>; here you replay a
+        recorded run and verify the tamper-evident ledger live.
       </p>
       <div className="topbar-spacer" />
       <div className="model-badges">
