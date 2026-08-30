@@ -35,7 +35,7 @@ export function staticAdvisory(routes: ScopedRoute[]): Advisory[] {
           message:
             `New endpoint ${r.method} ${r.path} has NO authentication/authorization middleware detected in the diff. ` +
             `If it exposes sensitive data or actions, this is a broken-access-control risk. Add a guard, or confirm the route is intentionally public. ` +
-            `To turn this advisory into a proof, run audit_change again with a target_base_url + probes.`,
+            `This is a heuristic advisory — the execution-proven exploit runs in the isolated sandbox (the agent/harness pipeline), not from this tool.`,
         },
   );
 }

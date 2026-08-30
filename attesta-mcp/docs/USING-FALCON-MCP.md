@@ -17,7 +17,7 @@ gateway to keep even those in-house). On a shared/hosted instance, `/mcp` requir
 |---|---|---|
 | `scope_surface(diff)` | New routes a diff introduces + whether each has an auth guard | — |
 | `audit_change(diff)` | **Flagship.** Static advisory flagging unguarded new endpoints (instant, no sandbox, no execution) | — |
-| `suggest_guard(method, route, framework?, note?)` | Proposes the middleware/guard to add (advisory, never auto-applied) | model |
+| `suggest_guard(method, route, framework?, note?)` | Proposes the middleware/guard to add (advisory, never auto-applied) | `SUGGEST_MODEL` (default GPT Sol) |
 | `explain_finding(entry_hash)` | Plain-language explanation of a sealed entry — verifies the chain first, refuses if it doesn't (returns `integrity_ok:false`) | — |
 | `seal_evidence` / `verify_ledger` | The hash-chained proof layer | model for seal |
 
