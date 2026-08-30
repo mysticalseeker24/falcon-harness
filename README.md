@@ -6,6 +6,8 @@
 
 Built for the TrueForge Agent Harness Hackathon (TrueForge + Qodo). TrueForge owns the agent loop, the sandbox, the approval gate, and the subagents; Falcon is the diff-scoped exploitation engine on top.
 
+**▶ [Watch the demo](https://youtu.be/otW96ftvVYY)**  ·  **📝 [Read the field report](https://dev.to/saksham_mishra_ba6fb01ac5/proof-not-guesses-building-an-ai-agent-that-exploits-your-pr-before-it-merges-1dc5)**
+
 ![The Falcon evidence console — an EXPLOITED verdict on vulnbank PR #3, with the captured unauthenticated request returning every tenant's balances.](public/pics/Falcon%20Dashboard%20PR3.png)
 
 <sub>The Falcon console: an **EXPLOITED** verdict on vulnbank PR #3 — the captured, unauthenticated request that returned every tenant's balances.</sub>
@@ -69,6 +71,28 @@ live-run evidence, is in [`.agent/TRUEFORGE-AGENT.md`](./.agent/TRUEFORGE-AGENT.
   integration; the dashboard's Approve is a labelled replay of that decision.
 - **No secrets in our code** — model and GitHub credentials live in the harness; `attesta-mcp` and the
   dashboard hold none.
+
+## Use Falcon as you code (MCP)
+
+Falcon isn't only a PR-time reviewer. `attesta-mcp` is a **Model Context Protocol** server, so any
+MCP-capable coding agent (**Claude Code, Cursor, …**) can connect to it and audit access control
+**while you write code** — before a PR even exists. Connect it (Streamable HTTP):
+
+```bash
+claude mcp add --transport http falcon http://localhost:8130/mcp
+```
+
+Then, as your agent adds a route:
+
+- **`audit_change(diff)`** — flags any new endpoint with **no auth guard**, instantly, from the diff
+  alone (a static advisory — no sandbox, no execution).
+- **`suggest_guard(method, route, …)`** — proposes the exact middleware to add.
+- **`explain_finding(entry_hash)`** — explains a sealed finding, after verifying the ledger chain.
+
+Run it **locally**, so your code never leaves your machine (only the optional model calls go out).
+The execution-proven exploit stays in the **sandbox** — these editor tools are the safe, no-execution
+surface. Full guide + tool table:
+[`attesta-mcp/docs/USING-FALCON-MCP.md`](./attesta-mcp/docs/USING-FALCON-MCP.md).
 
 ## Falcon in action
 
