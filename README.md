@@ -6,6 +6,10 @@
 
 Built for the TrueForge Agent Harness Hackathon (TrueForge + Qodo). TrueForge owns the agent loop, the sandbox, the approval gate, and the subagents; Falcon is the diff-scoped exploitation engine on top.
 
+![The Falcon evidence console — an EXPLOITED verdict on vulnbank PR #3, with the captured unauthenticated request returning every tenant's balances.](public/pics/Falcon%20Dashboard%20PR3.png)
+
+<sub>The Falcon console: an **EXPLOITED** verdict on vulnbank PR #3 — the captured, unauthenticated request that returned every tenant's balances.</sub>
+
 ---
 
 ## What it does
@@ -65,6 +69,22 @@ live-run evidence, is in [`.agent/TRUEFORGE-AGENT.md`](./.agent/TRUEFORGE-AGENT.
   integration; the dashboard's Approve is a labelled replay of that decision.
 - **No secrets in our code** — model and GitHub credentials live in the harness; `attesta-mcp` and the
   dashboard hold none.
+
+## Falcon in action
+
+The live run — **TrueForge drives Falcon on `vulnbank` PR #3, provisions a real Daytona sandbox, and proves the exploit** (verified 2026-08-30).
+
+![TrueForge running Falcon on vulnbank PR #3: scope, clone the head commit, install Node, boot, probe, EXPLOITED.](public/pics/Trueforge%20Chat%20for%20PR3%20-%203.png)
+
+<sub>TrueForge dispatching the skill + MCP tools on PR #3 — scope the diff → clone the exact head commit in the sandbox → install Node → boot vulnbank → run the probe → **EXPLOITED**.</sub>
+
+![A real Daytona sandbox provisioned by TrueForge for the run.](public/pics/Daytonna%20Sandboxes%20Dashboard.png)
+
+<sub>The **Daytona sandbox** TrueForge provisioned for the run — the target boots in isolation, never on the host.</sub>
+
+![The CLEAN path on vulnbank PR #4 — access control enforced.](public/pics/Falcon%20Dashboard%20PR4.png)
+
+<sub>The **CLEAN** path (PR #4): the same route, now guarded — `401` / `403` / `200` — so Falcon proposes the merge and **stops for human approval**.</sub>
 
 ## Spike results (PR 1)
 
@@ -154,6 +174,15 @@ ref `main`. ⚠️ A wrong path makes the git-skill install fail, which **breaks
 
 **7 · Sandbox** — Daytona is the provider; confirm it shows **ready**. (The base image ships no Node;
 the skill installs it in-sandbox.)
+
+**The configured harness** — Settings → Models · Connectors · Skills · Sandbox provider:
+
+| | |
+|:--:|:--:|
+| ![TrueForge Settings — Models](public/pics/Trueforge%20Settings%20-%20Models.png) | ![TrueForge Settings — Connectors](public/pics/Trueforge%20Settings%20-%20Connectors.png) |
+| **Models** — writer + auditor family | **Connectors** — attesta-mcp + GitHub |
+| ![TrueForge Settings — Skills](public/pics/Trueforge%20Settings%20-%20Skills.png) | ![TrueForge Settings — Sandbox Provider](public/pics/Trueforge%20Settings%20-%20Sandbox%20Provider.png) |
+| **Skills** — the diff-scoped playbook | **Sandbox** — Daytona, ready |
 
 **Run it** — open a TrueForge chat and paste:
 
