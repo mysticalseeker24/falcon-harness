@@ -11,10 +11,13 @@ export function Timeline({ steps }: { steps: RunStep[] }) {
   return (
     <section className="panel">
       <div className="panel-head">
-        <h3>Live activity</h3>
-        <span className="eyebrow">what it&apos;s doing</span>
+        <h3>Activity</h3>
+        <span className="badge-demo" title="a faithful replay of a real recorded run">replay</span>
       </div>
       <div className="panel-body">
+        <div className="replay-note">
+          Replay of a recorded Falcon run — the live agent run (sandbox boot + probe) happens in the TrueForge harness.
+        </div>
         <div className="steps">
           {steps.map((s) => (
             <div className="step" data-st={s.status} key={s.key}>

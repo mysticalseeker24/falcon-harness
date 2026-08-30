@@ -125,13 +125,15 @@ export function Console() {
   const resolveApproval = (decision: "approved" | "rejected") =>
     setRun((r) => ({ ...r, approval: { ...r.approval, resolved: decision } }));
 
+  const ledgerLive = ledger.entries.length > 0 && !ledger.error;
+
   return (
     <div className="shell">
-      <TopBar />
+      <TopBar ledgerLive={ledgerLive} />
       <CommandBar which={which} setWhich={setWhich} onRun={runFalcon} running={run.running} />
       <div className="grid">
         <Timeline steps={run.steps} />
-        <EvidenceDrawer evidence={run.evidence} auditorModel={run.auditorModel} auditorOk={run.auditorOk} />
+        <EvidenceDrawer evidence={run.evidence} auditorModel={run.auditorModel} auditorOk={run.auditorOk} verdict={run.verdict} />
         <VerdictBanner verdict={run.verdict} reason={run.reason} entryHash={run.entryHash} sealMatch={run.sealMatch} running={run.running} />
         {run.approval.required ? (
           <ApprovalCard
