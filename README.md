@@ -22,7 +22,22 @@ One vulnerability class (broken access control on new endpoints), one language (
 
 ## How it uses TrueForge
 
-_[fill as built: MCP tools registered, SKILL.md loaded, Daytona sandbox, subagent auditor, human-approval checkpoint on merge, session persistence]_
+TrueForge owns the loop; Falcon is the four authored pieces that plug into it:
+
+- **MCP server (`attesta-mcp`)** — registered over Streamable HTTP, three tools: `scope_surface`
+  (the new attack surface from the diff), `seal_evidence` (audits the finding, then hash-chains it),
+  and `verify_ledger` (recomputes the chain and re-reads the artifact bytes).
+- **`SKILL.md` playbook** — loaded as the agent's operating instructions: scope → clone the PR head
+  SHA in the sandbox → boot + health-probe → generate access-control probes → `seal_evidence` → act.
+- **Daytona sandbox** — provisioned by TrueForge; the agent installs Node in-sandbox, boots
+  `vulnbank`, and probes it on localhost (one sandbox boots *and* probes — de-risked in PR 1).
+- **Independent auditor** — runs *inside* `seal_evidence` on a **different model family** (GLM auditor
+  vs DeepSeek writer); a deterministic gate the model can only veto, never rubber-stamp.
+- **Human-approval checkpoint** — the CLEAN path proposes the merge and pauses on TrueForge's
+  `tool.approval_required`; approval resumes it via `user.tool_approval`, and the approval is sealed to
+  the ledger **before** the irreversible merge fires (see [`.agent/GATE.md`](./.agent/GATE.md)).
+- **No secrets in our code** — model and GitHub credentials live in the harness; `attesta-mcp` and the
+  dashboard hold none.
 
 ## Spike results (PR 1)
 
@@ -43,7 +58,34 @@ a `request_human_approval(summary)` MCP tool the dashboard flips via a DB flag.
 
 ## Run it
 
-_[setup steps a stranger can follow — filled as built]_
+**Prerequisites:** Node 24, an [OpenRouter](https://openrouter.ai) API key (for the auditor), and —
+for the full harness run — a [Daytona](https://daytona.io) key. On Windows, run TrueForge under WSL2
+(a native-Windows ESM path bug crashes it; see [`.agent/upstream-issue-draft.md`](./.agent/upstream-issue-draft.md)).
+
+```bash
+cp .env.example .env                 # set OPENROUTER_API_KEY (+ DAYTONA_API_KEY for the live run)
+```
+
+**The proof, without the harness** — boot the fixture, run the real pipeline, measure the headline:
+
+```bash
+cd attesta-mcp && npm install
+npm run typecheck && npm test        # 43 unit tests
+npm run bench                        # boots vulnbank ×3/branch, prints the verdict matrix
+npm start                            # (optional) MCP server on :8130 for the dashboard
+```
+
+**The console** — the evidence surface, reading the real ledger:
+
+```bash
+cd dashboard && npm install
+cp .env.example .env.local           # point at attesta-mcp's ledger + MCP url
+npm run dev                          # http://localhost:3000
+```
+
+**The full agent run** — run TrueForge (under WSL2), register `attesta-mcp` as a custom MCP server,
+import `SKILL.md` at the repo root, and point it at a `vulnbank` PR. The step-by-step is in
+[`.agent/SPINE.md`](./.agent/SPINE.md).
 
 ## `npm run bench`
 
@@ -83,10 +125,19 @@ safe       3    CLEAN        CLEAN        ok     sealed+verified   PASS
 
 ## Qodo Code Review Evidence
 
-_[mandatory. Filled through the build:]_
-- _Representative merged PR reviewed by Qodo: [link]_
-- _What Qodo surfaced and what changed: [1–2 sentences]_
-- _Follow-up review against final code: [link]_
+Every substantive change shipped as its own branch, reviewed by Qodo, findings resolved, then merged —
+the trail of small resolved PRs is itself a deliverable. Selected reviews:
+
+| PR | What Qodo surfaced | What changed |
+|---|---|---|
+| [#13 — dashboard](https://github.com/mysticalseeker24/falcon-harness/pull/13) | 13 compliance findings: unbounded `verify_ledger`, silently-swallowed HTTP/exception failures, destructive tamper/restore exposed to any caller, corrupt rows crashing hash rendering, and `Run Falcon`/`Approve` overclaiming a seal/merge | Finite-timeout verify; status-checked API with server-side logging + generic client errors; `ATTESTA_DEMO`-gated, atomic, backup-once tamper; safe `CORRUPT` view model; honest replay labelling reconciled against the live ledger |
+| [#9 — auditor](https://github.com/mysticalseeker24/falcon-harness/pull/9) | 9 findings on the independent auditor: forgeable pass boolean, same-family risk, unredacted evidence to the model | Moved the audit *inside* `seal_evidence`; enforced a different model family; deterministic gate the model can only veto; redact-before-model |
+| [#5 — MCP ledger tools](https://github.com/mysticalseeker24/falcon-harness/pull/5) | 7 findings on `scope_surface` / hashing: auth detection from non-middleware args, unanchored route regex, canonicalization edge cases | One canonical serializer; anchored extraction; `__proto__`-as-data hashing |
+| [#11 — bench](https://github.com/mysticalseeker24/falcon-harness/pull/11) | 7 findings: mutable branch refs, CLEAN accepted on bare 2xx, configured-not-measured metrics, raw stack traces | Pinned immutable SHAs + recorded artifact; CLEAN needs proven balances; measured metrics; redacted internal error log |
+
+**Follow-up review against final code:** each fix commit was re-reviewed by Qodo on the same PR before
+merge, and CI ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) runs both workspaces'
+typecheck + test suites on every PR and push to `main`.
 
 ---
 
