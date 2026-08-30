@@ -1,16 +1,22 @@
 import type { LedgerEntryView, VerifyResult } from "@/lib/types";
 
 const short = (m: string | null) => (m ? m.split("/")[1] ?? m : null);
+// Never assume an integrity field is a string — a corrupt row could carry anything.
+const hash = (h: unknown, n: number) => (typeof h === "string" ? h.slice(0, n) : "—");
 
 export function LedgerPanel({
   entries,
   verify,
+  error,
+  demoMutable,
   onVerify,
   onTamper,
   onRestore,
 }: {
   entries: LedgerEntryView[];
   verify: VerifyResult | null;
+  error: string | null;
+  demoMutable: boolean;
   onVerify: () => void;
   onTamper: () => void;
   onRestore: () => void;
@@ -22,21 +28,26 @@ export function LedgerPanel({
         <div className="ledger-tools">
           {verify ? (
             <span className={"verify-state " + (verify.valid ? "valid" : "invalid")}>
-              {verify.valid ? `✓ chain valid · ${verify.length} entries` : `✗ broken at ${verify.broken_at}`}
+              {verify.valid ? `✓ chain valid · ${verify.length} entries` : `✗ broken at ${verify.broken_at ?? "?"}`}
             </span>
           ) : null}
           <button className="btn btn-ghost" onClick={onVerify}>
             Verify chain
           </button>
-          <span className="badge-demo">demo</span>
-          <button className="btn btn-danger" onClick={onTamper}>
-            Tamper
-          </button>
-          <button className="btn btn-ghost" onClick={onRestore}>
-            Restore
-          </button>
+          {demoMutable ? (
+            <>
+              <span className="badge-demo">demo</span>
+              <button className="btn btn-danger" onClick={onTamper}>
+                Tamper
+              </button>
+              <button className="btn btn-ghost" onClick={onRestore}>
+                Restore
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
+      {error ? <div className="panel-error">⚠ {error}</div> : null}
       <div className="panel-body">
         {entries.length === 0 ? (
           <div className="empty">No sealed entries yet — run Falcon, or the agent, to seal one.</div>
@@ -53,8 +64,7 @@ export function LedgerPanel({
                   </div>
                 </div>
                 <div className="lhash">
-                  <span className="prev">{e.prev_hash.slice(0, 8)}</span> <span className="arrow">→</span>{" "}
-                  {e.entry_hash.slice(0, 10)}
+                  <span className="prev">{hash(e.prev_hash, 8)}</span> <span className="arrow">→</span> {hash(e.entry_hash, 10)}
                 </div>
               </div>
             ))}

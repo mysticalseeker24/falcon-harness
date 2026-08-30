@@ -91,6 +91,7 @@ export function initialRun(which: "vuln" | "safe"): RunState {
     verdict: null,
     reason: null,
     entryHash: null,
+    sealMatch: "unknown",
     auditorOk: null,
     approval: { required: false, resolved: null },
     running: false,

@@ -20,6 +20,11 @@ export interface Exchange {
   resBody: unknown;
 }
 
+// A run panel is always a faithful REPLAY of a real recorded Falcon run — never a live seal. After
+// it finishes we check the live ledger: `sealMatch` says whether the replayed entry_hash is actually
+// present as a sealed entry ("live") or is replay-only data ("replay").
+export type SealMatch = "live" | "replay" | "unknown";
+
 export interface RunState {
   target: { repo: string; pr: number; branch: string };
   writerModel: string;
@@ -29,6 +34,7 @@ export interface RunState {
   verdict: Verdict | null;
   reason: string | null;
   entryHash: string | null;
+  sealMatch: SealMatch;
   auditorOk: boolean | null;
   approval: { required: boolean; resolved: "approved" | "rejected" | null };
   running: boolean;
@@ -52,4 +58,6 @@ export interface VerifyResult {
 export interface LedgerState {
   entries: LedgerEntryView[];
   verify: VerifyResult | null;
+  error: string | null;
+  demoMutable: boolean;
 }

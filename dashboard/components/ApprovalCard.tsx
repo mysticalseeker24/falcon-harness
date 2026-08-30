@@ -17,13 +17,16 @@ export function ApprovalCard({
           Falcon proposes merge of <b>vulnbank PR #{pr}</b> — verdict CLEAN.
         </div>
         <div className="approval-note">
-          The merge is irreversible. It fires only after you approve; the approval itself is sealed to the ledger
-          (who approved, which finding, when).
+          In a live run the real gate lives in the harness: on approval, the agent seals an{" "}
+          <code>APPROVAL</code> entry (who approved, which CLEAN finding, when) <b>before</b> resuming the
+          TrueForge <code>tool.approval_required</code> merge (see GATE.md). This panel is the{" "}
+          <b>replay</b> of that decision — it records your choice here but does not itself fire the merge or
+          seal the approval.
         </div>
       </div>
       {resolved ? (
         <div className="approval-done">
-          ✓ {resolved === "approved" ? "Approved — merge fired, approval sealed" : "Rejected — no merge"}
+          {resolved === "approved" ? "✓ Approved (replay) — in a live run this seals the approval, then the merge fires" : "✗ Rejected (replay) — no merge"}
         </div>
       ) : (
         <div className="approval-actions">

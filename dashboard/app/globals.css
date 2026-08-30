@@ -176,6 +176,8 @@ a { color: inherit; }
 }
 .panel-head h3 { margin: 0; font: 600 13px var(--sans); letter-spacing: 0.01em; }
 .panel-body { padding: 14px 15px; overflow: auto; }
+.panel-error { margin: 0 15px 4px; padding: 8px 10px; font: 500 12px var(--sans); color: var(--exploited);
+  background: rgba(214, 69, 69, 0.08); border: 1px solid rgba(214, 69, 69, 0.35); border-radius: 6px; }
 
 /* ---- timeline ---- */
 .steps { display: flex; flex-direction: column; }
