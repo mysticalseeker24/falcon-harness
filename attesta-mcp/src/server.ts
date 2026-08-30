@@ -7,7 +7,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { scopeSurface } from "./lib/scopeSurface.js";
-import { sealEvidence, verifyLedger, type Auditor, type LedgerEntry } from "./lib/ledger.js";
+import { sealEvidence, verifyLedger, type Auditor } from "./lib/ledger.js";
 import { auditFinding } from "./lib/auditor.js";
 import { makeOpenRouterCall } from "./lib/openrouter.js";
 import { canonicalJson } from "./lib/canonicalJson.js";
@@ -174,28 +174,15 @@ app.get("/health", (_req, res) => {
 
 // Read-only ledger listing for the dashboard, which reads it server-side (no filesystem sharing in a
 // split deploy). NOT a mutation surface: seals happen only through the audited seal_evidence tool.
-function entryToView(e: LedgerEntry) {
-  return {
-    id: e.id,
-    verdict: e.verdict,
-    route: e.route ?? null,
-    pr_number: e.pr_number ?? null,
-    auditor_model: e.auditor_model ?? null,
-    entry_hash: e.entry_hash,
-    prev_hash: e.prev_hash,
-    ts: e.ts,
-  };
-}
+// Each entry is emitted as its FULL canonical representation — the exact bytes canonicalJson produced
+// when the entry was hashed and stored (CONVENTIONS §5) — so there is a single serialization contract
+// for a ledger entry and no divergent projection. A ledger entry carries no secrets (credentials are
+// redacted into the artifact at seal time), so the full entry is safe to expose. Corrupt rows surface
+// as a typed marker, not a fabricated entry.
 app.get("/ledger", async (_req, res) => {
   try {
     const rows = await stores.ledger.read();
-    const entries = rows.map((r, i) =>
-      r.ok
-        ? entryToView(r.entry)
-        : { id: `row-${i}`, verdict: "CORRUPT", route: null, pr_number: null, auditor_model: null, entry_hash: "—", prev_hash: "—", ts: "" },
-    );
-    // Serialize through the single canonical serializer (CONVENTIONS §5) rather than a second
-    // framework stringify, so every JSON emission of ledger data goes through one contract.
+    const entries = rows.map((r, i) => (r.ok ? r.entry : { corrupt: true, index: i }));
     res.type("application/json").send(canonicalJson({ entries }));
   } catch (err) {
     console.error("/ledger read failed:", err);
@@ -215,25 +202,49 @@ app.get("/verify", async (_req, res) => {
   }
 });
 
-// On a fresh deploy the persistent disk is empty. If a bundled seed exists and there is no ledger
-// yet, copy it in so the live console shows real, verifiable entries on first visit. Never overwrites
-// an existing ledger; disable with ATTESTA_SEED_ON_BOOT=0.
+// On a fresh deploy the persistent disk is empty; copy the bundled seed in so the live console shows
+// real, verifiable entries on first visit. Disable with ATTESTA_SEED_ON_BOOT=0.
+//
+// Publishing is transactional AND recoverable, because an entry whose artifact is missing verifies as
+// broken:
+//   • Fresh disk — copy ALL artifacts FIRST, then commit the ledger LAST via an atomic rename. The
+//     ledger file is the "initialized" marker, so it can never appear before the artifacts it
+//     references; a crash mid-copy leaves no ledger and the next boot retries cleanly.
+//   • Existing ledger — recover a previously-partial seed by re-copying artifacts, but ONLY when the
+//     ledger is still byte-identical to the seed (nothing real has been appended). A diverged ledger
+//     (real data) is never touched.
 async function seedIfEmpty(): Promise<void> {
   if (process.env.ATTESTA_SEED_ON_BOOT === "0") return;
   const { ledgerPath, artifactDir } = getStorePaths();
-  if (existsSync(ledgerPath)) return;
   const seedDir = process.env.ATTESTA_SEED_DIR ?? path.resolve(process.cwd(), "seed");
   const seedLedger = path.join(seedDir, "ledger.jsonl");
   if (!existsSync(seedLedger)) return;
-  await fs.mkdir(path.dirname(path.resolve(ledgerPath)), { recursive: true });
-  await fs.copyFile(seedLedger, ledgerPath);
   const seedArtifacts = path.join(seedDir, "artifacts");
-  if (existsSync(seedArtifacts)) {
+
+  const copyArtifacts = async (): Promise<void> => {
+    if (!existsSync(seedArtifacts)) return;
     await fs.mkdir(artifactDir, { recursive: true });
     for (const f of await fs.readdir(seedArtifacts)) {
+      // Content-addressed + idempotent: re-copying an already-present artifact is a harmless no-op.
       await fs.copyFile(path.join(seedArtifacts, f), path.join(artifactDir, f));
     }
+  };
+
+  if (existsSync(ledgerPath)) {
+    try {
+      const [have, seed] = await Promise.all([fs.readFile(ledgerPath, "utf8"), fs.readFile(seedLedger, "utf8")]);
+      if (have === seed) await copyArtifacts(); // restore artifacts a prior partial seed may have missed
+    } catch (err) {
+      console.error("attesta-mcp: seed recovery check skipped:", err);
+    }
+    return;
   }
+
+  await copyArtifacts(); // artifacts first…
+  await fs.mkdir(path.dirname(path.resolve(ledgerPath)), { recursive: true });
+  const tmpLedger = `${ledgerPath}.seed.tmp`;
+  await fs.copyFile(seedLedger, tmpLedger);
+  await fs.rename(tmpLedger, ledgerPath); // …then commit the ledger marker atomically, last
   console.log(`attesta-mcp: seeded ledger from ${seedDir}`);
 }
 
