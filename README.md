@@ -113,8 +113,60 @@ cp .env.example .env.local           # point at attesta-mcp's ledger + MCP url
 npm run dev                          # http://localhost:3000
 ```
 
-**The full agent run** — run TrueForge (under WSL2), register `attesta-mcp` as a custom MCP server,
-import `SKILL.md` at the repo root, and point it at a `vulnbank` PR. The step-by-step is in
+### The full agent run — locally, end to end
+
+This is Falcon actually working: **TrueForge drives the loop, provisions a Daytona sandbox, runs the
+exploit, and pauses for approval.** It runs entirely on your machine — a hosted product isn't required.
+On Windows, do all of this **under WSL2** (a native-Windows ESM path bug crashes TrueForge). The exact
+agent configuration is in [`.agent/TRUEFORGE-AGENT.md`](./.agent/TRUEFORGE-AGENT.md); the ordered setup:
+
+**1 · Start `attesta-mcp` (with the auditor key)** — from `attesta-mcp/`:
+
+```bash
+npm install
+npm start                            # loads ../.env → http://localhost:8130/mcp
+curl localhost:8130/health           # expect {"ok":true}
+```
+
+It needs `OPENROUTER_API_KEY` in the root `.env` (the in-seal audit runs on a different model family).
+
+**2 · Start TrueForge** (WSL2, Node 24):
+
+```bash
+npx --yes @truefoundry/trueforge     # UI on http://localhost:8790
+```
+
+**3 · Register the models** (TrueForge → Models): writer `openrouter/deepseekv4-pro` and the
+auditor-family `openrouter/glm5.3-flash`, both via OpenRouter.
+
+**4 · Register the connectors** (TrueForge → Connectors):
+- **attesta-mcp** — *Add MCP Server* → `http://localhost:8130/mcp` (enable all its tools).
+- **GitHub** — a fine-grained token scoped to `DevLab-mgc/vulnbank`, least-privilege: *Pull requests*
+  read, *Contents* read/write (merge), *Issues* read/write (PR comments), *Metadata* read. Store the
+  token in the harness — **never in the repo**.
+
+**5 · Import the skill** (TrueForge → Skills → *Import from GitHub*): repo
+`mysticalseeker24/falcon-harness`, **`path` left empty** (repo root — `SKILL.md` is at the root),
+ref `main`. ⚠️ A wrong path makes the git-skill install fail, which **breaks the whole sandbox**.
+
+**6 · Gate the merge** — mark the GitHub **merge** tool as approval-required (require approval for
+`@write`). This is what makes the harness stop for a human on the CLEAN path.
+
+**7 · Sandbox** — Daytona is the provider; confirm it shows **ready**. (The base image ships no Node;
+the skill installs it in-sandbox.)
+
+**Run it** — open a TrueForge chat and paste:
+
+> Following your skill, review `DevLab-mgc/vulnbank` PR #3 for broken access control: scope the new
+> surface, boot vulnbank in the sandbox, run your probe, and give the verdict with the captured
+> request and response.
+
+Expected: a **Daytona sandbox is created** → vulnbank boots → unauthenticated `GET /admin/balances` →
+`200` + every tenant's balances → **EXPLOITED**, sealed. Then try **PR #4** for the **CLEAN** path — it
+proposes the merge and **pauses for your approval**.
+
+**Watch it land:** the dashboard's ledger panel (the console block above, pointed at local `:8130`)
+shows the freshly-sealed entry, and **Verify chain** re-reads the bytes. Full walkthrough:
 [`.agent/SPINE.md`](./.agent/SPINE.md).
 
 ## `npm run bench`
