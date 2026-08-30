@@ -11,6 +11,8 @@ import { sealEvidence, verifyLedger, type Auditor } from "./lib/ledger.js";
 import { auditFinding } from "./lib/auditor.js";
 import { makeOpenRouterCall } from "./lib/openrouter.js";
 import { canonicalJson } from "./lib/canonicalJson.js";
+import { staticAdvisory } from "./lib/advisory.js";
+import { suggestGuard } from "./lib/suggestGuard.js";
 import { getStorePaths, getStores } from "./storage/factory.js";
 
 // The independent auditor runs on a DIFFERENT model family than the main agent (the writer). Default
@@ -140,6 +142,70 @@ function buildServer(): McpServer {
     async () => {
       const result = await verifyLedger(stores.ledger, stores.artifacts);
       return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.tool(
+    "audit_change",
+    "Audit the access-control impact of a code change, statically. Scopes the new HTTP endpoints from the unified `diff` and returns a STATIC ADVISORY flagging any new endpoint with no auth middleware detected (instant, no sandbox, no execution). This is a heuristic prompt-to-check, not a proof. EXECUTION-PROVEN exploitation is deliberately NOT done here — running the target belongs in the isolated sandbox (the agent/harness pipeline that boots the app and seals via seal_evidence), never as a host-side probe from this server. Use this while coding: write a route, get the advisory, fix it before the PR.",
+    { diff: z.string().describe("unified diff of the change") },
+    async ({ diff }) => {
+      const scope = scopeSurface(diff);
+      const out = { routes: scope.routes, advisory: staticAdvisory(scope.routes) };
+      return { content: [{ type: "text", text: JSON.stringify(out) }] };
+    },
+  );
+
+  server.tool(
+    "suggest_guard",
+    "Given an unguarded new endpoint, propose the minimal auth/authorization middleware to add. Advisory only — a suggestion for a human to review, never auto-applied. Requires a configured model (OPENROUTER_API_KEY); returns { available:false } otherwise.",
+    {
+      method: z.string(),
+      route: z.string(),
+      framework: z.string().optional().describe("default: express (TypeScript)"),
+      note: z.string().optional().describe("optional context, e.g. 'admin-only, tenant-scoped'"),
+    },
+    async ({ method, route, framework, note }) => {
+      const modelCall = OPENROUTER_API_KEY
+        ? makeOpenRouterCall({ model: WRITER_MODEL, apiKey: OPENROUTER_API_KEY, baseUrl: OPENROUTER_BASE_URL })
+        : null;
+      const result = await suggestGuard({ method, route, framework, note }, modelCall, WRITER_MODEL);
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.tool(
+    "explain_finding",
+    "Explain a sealed ledger entry in plain language: its verdict, the endpoint, the PR, when it was sealed, and which different-family model independently audited it. It first runs the authoritative integrity check (recomputes the chain + re-reads artifact bytes) and refuses to describe anything as sealed if the ledger does not verify — returning integrity_ok:false instead. No model call.",
+    { entry_hash: z.string().regex(/^[0-9a-f]{64}$/, "must be a 64-char lowercase hex hash") },
+    async ({ entry_hash }) => {
+      // Only trust the ledger contents if the whole chain + artifacts verify (integrity before description).
+      const verification = await verifyLedger(stores.ledger, stores.artifacts);
+      if (!verification.valid) {
+        return { content: [{ type: "text", text: canonicalJson({ integrity_ok: false, broken_at: verification.broken_at }) }] };
+      }
+      const rows = await stores.ledger.read();
+      const row = rows.find((r) => r.ok && r.entry.entry_hash === entry_hash);
+      if (!row || !row.ok) {
+        return { content: [{ type: "text", text: canonicalJson({ integrity_ok: true, found: false }) }] };
+      }
+      const e = row.entry;
+      const explanation =
+        `${e.verdict} — ${e.route ?? "route n/a"} on ${e.target_repo}` +
+        (e.pr_number != null ? ` (PR #${e.pr_number})` : "") +
+        `. Sealed ${e.ts}. Independently audited by ${e.auditor_model ?? "n/a"} — a different model family than the writer` +
+        (e.auditor_reason ? `: ${e.auditor_reason}` : ".");
+      // The DTO is a summary (not a ledger entry); still emit it through the single canonical serializer.
+      const finding = {
+        verdict: e.verdict,
+        route: e.route,
+        target_repo: e.target_repo,
+        pr_number: e.pr_number,
+        ts: e.ts,
+        auditor_model: e.auditor_model ?? null,
+        entry_hash: e.entry_hash,
+      };
+      return { content: [{ type: "text", text: canonicalJson({ integrity_ok: true, found: true, finding, explanation }) }] };
     },
   );
 
