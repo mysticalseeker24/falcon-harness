@@ -149,6 +149,7 @@ a { color: inherit; }
 .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--brass); box-shadow: 0 0 8px var(--brass-glow); }
 .dot.alt { background: var(--info); box-shadow: 0 0 8px rgba(110, 168, 254, 0.4); }
 .dot.live { background: var(--clean); box-shadow: 0 0 8px var(--clean-glow); animation: pulseRing 2.4s infinite; }
+.dot.off { background: var(--text-faint); box-shadow: none; }
 
 /* ---- command bar ---- */
 .commandbar {
@@ -286,6 +287,7 @@ a { color: inherit; }
 .status-pill { font: 640 11px var(--mono); padding: 3px 9px; border-radius: 6px; letter-spacing: 0.03em; }
 .status-2xx { color: var(--exploited-ink); background: var(--exploited-bg); box-shadow: 0 0 0 1px var(--exploited-line) inset; }
 .status-deny { color: var(--clean-ink); background: var(--clean-bg); box-shadow: 0 0 0 1px var(--clean-line) inset; }
+.status-ok { color: var(--text-muted); background: var(--raised); box-shadow: 0 0 0 1px var(--border) inset; }
 .leak-tag {
   margin-left: auto; font: 700 9.5px var(--sans); letter-spacing: 0.14em; text-transform: uppercase;
   padding: 3px 8px; border-radius: 5px;

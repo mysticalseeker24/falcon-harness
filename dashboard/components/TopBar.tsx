@@ -2,7 +2,7 @@ import { AUDITOR_MODEL, WRITER_MODEL } from "@/lib/demo";
 
 const short = (m: string) => m.split("/")[1] ?? m;
 
-export function TopBar() {
+export function TopBar({ ledgerLive = false }: { ledgerLive?: boolean }) {
   return (
     <header className="topbar">
       <div className="brand">
@@ -13,8 +13,8 @@ export function TopBar() {
         </div>
       </div>
       <p className="masthead-thesis">
-        Reads a pull request, boots the target in an isolated sandbox, and runs a <b>real exploit</b> —
-        returns a request, a response, and a verdict. A proven fact, not a severity guess.
+        <b>Falcon</b> reads a pull request, boots the target in a sandbox, and runs a real exploit — in
+        the TrueForge harness. This console renders the proof and verifies the tamper-evident ledger live.
       </p>
       <div className="topbar-spacer" />
       <div className="model-badges">
@@ -24,8 +24,9 @@ export function TopBar() {
         <span className="mbadge">
           <span className="dot alt" /> auditor <b>{short(AUDITOR_MODEL)}</b>
         </span>
+        {/* Reflects the real backend/ledger connection, not a decorative claim. */}
         <span className="mbadge">
-          <span className="dot live" /> <b>live</b>
+          <span className={"dot " + (ledgerLive ? "live" : "off")} /> ledger <b>{ledgerLive ? "live" : "offline"}</b>
         </span>
       </div>
     </header>
