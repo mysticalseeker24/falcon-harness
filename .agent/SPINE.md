@@ -63,11 +63,13 @@ balances → **EXPLOITED**, with the request/response captured. On the **safe** 
 `auth_present: true` → no-token `401`, non-admin `403` → **CLEAN**.
 
 **Verified live (2026-08-30):** the full TrueForge → Daytona → exploit → seal loop was driven
-end-to-end against the real PRs — **PR #3 EXPLOITED** (sealed `125ef2e7…`) and **PR #4 CLEAN** (sealed
-`2375e2b4…`) — each provisioning a **real Daytona sandbox** (`sandbox.created`), booting vulnbank at
-the exact head SHA, and passing `verify_ledger` afterward. The merge on the CLEAN path **paused for
-human approval**. The exact agent spec + reproduction steps are in
-[TRUEFORGE-AGENT.md](./TRUEFORGE-AGENT.md).
+end-to-end against the real PRs — **PR #3 EXPLOITED** and **PR #4 CLEAN** — each provisioning a **real
+Daytona sandbox** (`sandbox.created`), booting vulnbank at the exact head SHA, and passing
+`verify_ledger` afterward. The merge on the CLEAN path **paused for human approval**. Each live run
+seals a fresh entry, so hashes differ per run; the **committed, auditable record** of the same two
+verdicts is the seed ledger — EXPLOITED#3 `f0ca81e8…` and CLEAN#4 `b69f0a77…` in
+[`attesta-mcp/seed/ledger.jsonl`](../attesta-mcp/seed/ledger.jsonl). The exact agent spec + reproduction
+steps are in [TRUEFORGE-AGENT.md](./TRUEFORGE-AGENT.md).
 
 Discipline unchanged: the **headline number** still comes only from a `bench` run — the repeatable,
 self-checking harness that boots all branches ×3 and exits non-zero on any wrong verdict — never from

@@ -84,9 +84,11 @@ claude mcp add --transport http falcon http://localhost:8130/mcp
 
 Then, as your agent adds a route:
 
-- **`audit_change(diff)`** — flags any new endpoint with **no auth guard**, instantly, from the diff
-  alone (a static advisory — no sandbox, no execution).
-- **`suggest_guard(method, route, …)`** — proposes the exact middleware to add.
+- **`audit_change(diff)`** — heuristically flags detected Express-style new routes that have **no auth
+  guard**, straight from the diff (a regex advisory: same-line route registrations only, no
+  reachability — it can miss unsupported patterns or multi-line registrations).
+- **`suggest_guard(method, route, …)`** — *suggests* middleware to add, for a human to review
+  (advisory, non-deterministic model output — not a guaranteed fix).
 - **`explain_finding(entry_hash)`** — explains a sealed finding, after verifying the ledger chain.
 
 Run it **locally**, so your code never leaves your machine (only the optional model calls go out).
@@ -100,15 +102,14 @@ The live run — **TrueForge drives Falcon on `vulnbank` PR #3, provisions a rea
 
 ![TrueForge running Falcon on vulnbank PR #3: scope, clone the head commit, install Node, boot, probe, EXPLOITED.](public/pics/Trueforge%20Chat%20for%20PR3%20-%203.png)
 
-<sub>TrueForge dispatching the skill + MCP tools on PR #3 — scope the diff → clone the exact head commit in the sandbox → install Node → boot vulnbank → run the probe → **EXPLOITED**.</sub>
-
-![A real Daytona sandbox provisioned by TrueForge for the run.](public/pics/Daytonna%20Sandboxes%20Dashboard.png)
-
-<sub>The **Daytona sandbox** TrueForge provisioned for the run — the target boots in isolation, never on the host.</sub>
+<sub>TrueForge dispatching the skill + MCP tools on PR #3 — scope the diff → provision a Daytona sandbox → clone the exact head commit → install Node → boot vulnbank → run the probe → **EXPLOITED**.</sub>
 
 ![The CLEAN path on vulnbank PR #4 — access control enforced.](public/pics/Falcon%20Dashboard%20PR4.png)
 
 <sub>The **CLEAN** path (PR #4): the same route, now guarded — `401` / `403` / `200` — so Falcon proposes the merge and **stops for human approval**.</sub>
+
+The full step-by-step screenshots of both runs (PR #3 and PR #4) are in
+[`public/pics/`](./public/pics).
 
 ## Spike results (PR 1)
 
