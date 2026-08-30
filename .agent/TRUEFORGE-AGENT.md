@@ -20,7 +20,7 @@ TrueForge configures the agent **inline per session** (there is no separate "age
   "mcp_servers": [
     {
       "name": "github",
-      "enable_tools": ["pull_request_read"],
+      "enable_tools": ["pull_request_read", "add_issue_comment", "merge_pull_request"],
       "require_approval_for_tools": ["@write", "@destructive"],
       "preload": true
     },
@@ -48,7 +48,7 @@ TrueForge configures the agent **inline per session** (there is no separate "age
 | Field | Value | Why |
 |---|---|---|
 | `model.name` | `openrouter/deepseekv4-pro` | The **writer** (main agent). Registered in TrueForge → maps to OpenRouter `deepseek/deepseek-v4-pro-0813:exacto`. The independent audit runs on a **different family** (GLM) inside `seal_evidence`, so this model can never rubber-stamp itself. |
-| `mcp_servers[github]` | `enable_tools: [pull_request_read]` | Read the PR + its diff, read-only. **Writes gated:** `require_approval_for_tools: ["@write","@destructive"]` puts the **merge** (and any comment) behind a human approval — this is the control-safety gate. |
+| `mcp_servers[github]` | `enable_tools: [pull_request_read, add_issue_comment, merge_pull_request]` | The full workflow needs to **read** the PR + diff, **comment** the proof on an EXPLOITED finding, and **merge** on an approved CLEAN one. **Writes are gated:** `require_approval_for_tools: ["@write","@destructive"]` puts the comment *and* the merge behind human approval — the merge is the control-safety gate. (Headless *report-only* test runs restrict this to `pull_request_read`, since they neither comment nor merge.) |
 | `mcp_servers[attesta-mcp]` | `enable_tools: [@all]` | Our MCP server: `scope_surface`, `seal_evidence`, `verify_ledger` (+ the as-you-code tools). Its writes are also approval-eligible, but `seal_evidence` is the audited seal, so sealing is not blocked in practice. |
 | `skills` | `diff-scoped-broken-access-control` | Our [`SKILL.md`](../SKILL.md) playbook — the method the agent follows (scope → boot → probe → verdict → seal → act). |
 | `config.sandbox.enabled` | `true` | TrueForge provisions a **Daytona** sandbox for the run. The skill installs Node in it (the base image ships none) and boots vulnbank there — the target never runs on the host. |
@@ -88,11 +88,18 @@ Driven headlessly against the local TrueForge with this exact spec:
 
 - **PR #3 (vuln):** `sandbox.created` (real Daytona sandbox) → cloned head SHA `68cd31e2…`, installed
   Node v22.14.0, booted vulnbank, `/health 200` → unauthenticated `GET /admin/balances` returned
-  `200` + every tenant's balances → **EXPLOITED** → sealed `125ef2e792cd…`.
-- **PR #4 (safe):** same boot → `401` / `403` / admin `200` → **CLEAN** → sealed `2375e2b4e3bb…`.
+  `200` + every tenant's balances → **EXPLOITED** → sealed.
+- **PR #4 (safe):** same boot → `401` / `403` / admin `200` → **CLEAN** → sealed.
 - **Gate:** on the CLEAN merge proposal the run **paused for human approval** (the merge is
   `@write` → approval-gated); not approved in the test, so nothing merged.
 - **Ledger:** `verify_ledger` → `valid`, all entries re-verify by re-reading artifact bytes.
+
+Each live run seals a *fresh* entry, so the exact hashes differ per run. For an **auditable, in-repo
+record** of the same two verdicts, the committed seed
+([`attesta-mcp/seed/ledger.jsonl`](../attesta-mcp/seed/ledger.jsonl)) holds the identical outcomes,
+captured through the same audited pipeline and re-verifiable with `verify_ledger`:
+**EXPLOITED#3** `f0ca81e8f1f19b82253b17b2f5a4a3e3f7f1a8a91048bc640562f1df12073666` and
+**CLEAN#4** `b69f0a776899221c29cb4cb2df216c9c8c60b62472db82cdca07391b21b49d1c`.
 
 This upgrades SPINE.md's earlier "observed once" note: the full TrueForge → Daytona → exploit → seal
 loop is now reproducibly verified.

@@ -1,5 +1,6 @@
-// suggest_guard — turn a finding into a fix. Given an unguarded endpoint, ask a model for the exact
-// middleware/guard to add. Advisory output: a suggestion for a human to review, never auto-applied.
+// suggest_guard — turn a finding into a candidate fix. Given an unguarded endpoint, ask a model for
+// the middleware/guard to add. Advisory only: a suggestion for a human to review, never auto-applied,
+// and never guaranteed correct (model output is non-deterministic).
 import type { ModelCall } from "./openrouter.js";
 
 export interface GuardRequest {
@@ -45,20 +46,22 @@ export async function suggestGuard(req: GuardRequest, modelCall: ModelCall | nul
     // Never surface raw model/transport errors to the caller.
     return { available: false, reason: "suggestion unavailable (model error)", framework };
   }
-  // Preferred: strict JSON. Weaker models often can't embed multi-line CODE in valid JSON, so fall
-  // back to returning the model's text as-is rather than failing — the suggestion is still useful.
+  // Preferred: strict JSON (a non-empty suggestion + explanation). Weaker models can't reliably embed
+  // multi-line code in JSON, so fall back to a fenced code block. A reply with NO code block (a refusal
+  // or bare prose) is NOT a usable suggestion → available:false.
   try {
     const parsed = JSON.parse(extractJson(raw)) as { suggestion?: unknown; explanation?: unknown };
-    if (typeof parsed.suggestion === "string" && typeof parsed.explanation === "string") {
+    if (typeof parsed.suggestion === "string" && parsed.suggestion.trim() && typeof parsed.explanation === "string") {
       return { available: true, framework, suggestion: parsed.suggestion, explanation: parsed.explanation, model };
     }
   } catch {
-    /* fall through to raw text */
+    /* fall through to the fenced-code fallback */
   }
-  if (raw && raw.trim()) {
-    return { available: true, framework, suggestion: raw.trim(), explanation: "Model returned unstructured text; shown as-is for review.", model };
+  const fenced = extractFencedCode(raw);
+  if (fenced) {
+    return { available: true, framework, suggestion: fenced.code, explanation: fenced.explanation, model };
   }
-  return { available: false, reason: "empty suggestion", framework };
+  return { available: false, reason: "model returned no usable guard (no code block)", framework };
 }
 
 // Models sometimes wrap JSON in prose/fences; take the outermost JSON object.
@@ -67,4 +70,15 @@ function extractJson(s: string): string {
   const end = s.lastIndexOf("}");
   if (start === -1 || end === -1 || end < start) return s;
   return s.slice(start, end + 1);
+}
+
+// Extract the first NON-EMPTY fenced code block plus any prose that follows it. Returns null when
+// there is no fenced block or the block is empty — a refusal or bare prose is not a suggestion.
+function extractFencedCode(s: string): { code: string; explanation: string } | null {
+  const m = s.match(/```[^\n]*\n([\s\S]*?)```/);
+  if (!m || m.index == null) return null;
+  const code = m[1]?.trim();
+  if (!code) return null;
+  const after = s.slice(m.index + m[0].length).trim();
+  return { code, explanation: after || "Suggested guard — review before applying." };
 }
