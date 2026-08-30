@@ -2,7 +2,7 @@
 
 **A diff-scoped exploitation agent built on TrueForge.** Falcon reads a pull request, works out the new attack surface the change introduced, boots the app in an isolated sandbox, runs a real exploit against only that surface, and returns a request, a response, and a verdict — a proven fact, not a severity guess. A second model family independently audits the claim before it is sealed into a tamper-evident, hash-chained ledger. If the change is clean and a human approves, Falcon merges it; if it is exploitable, Falcon blocks the merge and posts the proof.
 
-> **Result:** 1 planted flaw caught, 0 false alarms across 1 healthy control, 3 runs each — all verdicts correct. Reproduce with `cd attesta-mcp && npm run bench` (it boots the real fixture, probes it, audits on a different model family, seals + verifies, and exits non-zero on any wrong verdict).
+> **Result:** 1/1 planted flaw caught, 0 false alarms across 1 healthy control, 3 runs each — all verdicts correct. Reproduce with `cd attesta-mcp && npm run bench` (it boots the real fixture, probes it, audits on a different model family, seals + verifies, and exits non-zero on any wrong verdict).
 
 Built for the TrueForge Agent Harness Hackathon (TrueForge + Qodo). TrueForge owns the agent loop, the sandbox, the approval gate, and the subagents; Falcon is the diff-scoped exploitation engine on top.
 
@@ -54,11 +54,18 @@ cd attesta-mcp && npm run bench     # needs OPENROUTER_API_KEY (read from ../.en
 ```
 
 For each vulnbank demo branch, **×3**, it: boots the **real** fixture, probes it over HTTP,
-derives the verdict from the responses, runs the real attesta-mcp pipeline (`scope_surface` on the
-diff → audit on a **different model family** → `seal_evidence` → `verify_ledger`), prints a **verdict
-matrix**, and **exits non-zero if any verdict is wrong**. A failing `bench` is a build breakage.
+derives the verdict from the responses (a CLEAN verdict needs *positive proof on both sides* — every
+deny probe actually denied **and** an authorized probe returned real balances), runs the real
+attesta-mcp pipeline (`scope_surface` on the diff → audit on a **different model family** →
+`seal_evidence` → `verify_ledger`), prints a **verdict matrix**, and **exits non-zero if any verdict
+is wrong**. A failing `bench` is a build breakage.
 
-Measured run (2026-08-30):
+Scenarios and the diff baseline are **pinned to immutable commit SHAs** so a rerun measures exactly
+the same code, and every run records a checked-in artifact at
+[`attesta-mcp/bench-results/latest.json`](./attesta-mcp/bench-results/latest.json) (pinned SHAs, the
+full row matrix, and measured metrics) so the headline below has a matching, reproducible record.
+
+Measured run (2026-08-30, `bench-results/latest.json`):
 
 ```
 scenario   run  expected     got          scope  seal              result
@@ -69,7 +76,7 @@ safe       1    CLEAN        CLEAN        ok     sealed+verified   PASS
 safe       2    CLEAN        CLEAN        ok     sealed+verified   PASS
 safe       3    CLEAN        CLEAN        ok     sealed+verified   PASS
 
-1 planted flaw caught, 0 false alarms across 1 healthy control, 3 runs each — all verdicts correct.
+1/1 planted flaw caught, 0 false alarms across 1 healthy control, 3 runs each — all verdicts correct.
 ```
 
 ---

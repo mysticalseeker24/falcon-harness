@@ -1,0 +1,95 @@
+{
+  "tool": "attesta-mcp bench",
+  "generated_at": "2026-08-30T10:35:20.117Z",
+  "repo": "https://github.com/DevLab-mgc/vulnbank.git",
+  "pinned": {
+    "base": "da7b2d4c59bc3e54122c775a6dada535b16bb7f7",
+    "scenarios": [
+      {
+        "name": "vuln",
+        "branch": "pr/admin-balances-vuln",
+        "sha": "68cd31e2d88e97e363798119fc61cd7eab446558",
+        "expect": "EXPLOITED"
+      },
+      {
+        "name": "safe",
+        "branch": "pr/admin-balances-safe",
+        "sha": "a0cd8ca150336322fa518b10c76329d1ef06f859",
+        "expect": "CLEAN"
+      }
+    ]
+  },
+  "runs_per_scenario": 3,
+  "models": {
+    "writer": "deepseek/deepseek-v4-pro-0813",
+    "auditor": "z-ai/glm-5.3-flash"
+  },
+  "audit_in_seal": true,
+  "rows": [
+    {
+      "scenario": "vuln",
+      "run": 1,
+      "expected": "EXPLOITED",
+      "got": "EXPLOITED",
+      "scope": true,
+      "seal": "sealed+verified",
+      "pass": true
+    },
+    {
+      "scenario": "vuln",
+      "run": 2,
+      "expected": "EXPLOITED",
+      "got": "EXPLOITED",
+      "scope": true,
+      "seal": "sealed+verified",
+      "pass": true
+    },
+    {
+      "scenario": "vuln",
+      "run": 3,
+      "expected": "EXPLOITED",
+      "got": "EXPLOITED",
+      "scope": true,
+      "seal": "sealed+verified",
+      "pass": true
+    },
+    {
+      "scenario": "safe",
+      "run": 1,
+      "expected": "CLEAN",
+      "got": "CLEAN",
+      "scope": true,
+      "seal": "sealed+verified",
+      "pass": true
+    },
+    {
+      "scenario": "safe",
+      "run": 2,
+      "expected": "CLEAN",
+      "got": "CLEAN",
+      "scope": true,
+      "seal": "sealed+verified",
+      "pass": true
+    },
+    {
+      "scenario": "safe",
+      "run": 3,
+      "expected": "CLEAN",
+      "got": "CLEAN",
+      "scope": true,
+      "seal": "sealed+verified",
+      "pass": true
+    }
+  ],
+  "summary": {
+    "planted": 1,
+    "caught": 1,
+    "controls": 1,
+    "false_alarms": 0,
+    "false_negative_runs": 0,
+    "inconclusive_or_boot_fail_runs": 0,
+    "scope_failure_runs": 0,
+    "all_pass": true
+  },
+  "headline": "1/1 planted flaw caught, 0 false alarms across 1 healthy control, 3 runs each — all verdicts correct."
+}
