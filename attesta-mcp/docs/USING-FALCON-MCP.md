@@ -16,19 +16,20 @@ gateway to keep even those in-house). On a shared/hosted instance, `/mcp` requir
 | Tool | What it does | Needs |
 |---|---|---|
 | `scope_surface(diff)` | New routes a diff introduces + whether each has an auth guard | — |
-| `audit_change(diff, target_base_url?, probes?, seal?)` | **Flagship.** Static advisory for unguarded new endpoints; if a running `target_base_url` + `probes` are given, executes them, derives EXPLOITED/CLEAN/INCONCLUSIVE from the real responses, and (with `seal`) independently audits + seals the proof | model for seal-audit |
+| `audit_change(diff)` | **Flagship.** Static advisory flagging unguarded new endpoints (instant, no sandbox, no execution) | — |
 | `suggest_guard(method, route, framework?, note?)` | Proposes the middleware/guard to add (advisory, never auto-applied) | model |
-| `explain_finding(entry_hash)` | Plain-language explanation of a sealed entry (verdict, endpoint, PR, different-family auditor) | — |
+| `explain_finding(entry_hash)` | Plain-language explanation of a sealed entry — verifies the chain first, refuses if it doesn't (returns `integrity_ok:false`) | — |
 | `seal_evidence` / `verify_ledger` | The hash-chained proof layer | model for seal |
 
 ## The as-you-code loop
 
 1. You add a route. The agent calls `audit_change(diff)` → gets *"`GET /admin/x` has no auth guard"*
    (a **static advisory**, instant, no sandbox).
-2. If a dev server is running, the agent calls `audit_change(diff, target_base_url, probes)` → gets a
-   **proof**: the captured unauthenticated request returning `200` + data, verdict `EXPLOITED`.
-3. The agent calls `suggest_guard(...)` → gets the exact middleware to add, and fixes it **before the
+2. The agent calls `suggest_guard(...)` → gets the exact middleware to add, and fixes it **before the
    PR** — instead of Falcon catching it at PR time.
 
 Static advisory is a heuristic (regex over the diff, no reachability) — a prompt to check, not a
-proof. The proof is the executed exchange. That distinction is deliberate and always labelled.
+proof. **Execution-proven exploitation is deliberately not done by these tools:** running the target
+belongs in the **isolated sandbox** (the agent/harness pipeline that boots the app and seals via
+`seal_evidence`), never as a host-side probe from the MCP server. That boundary is the whole point of
+Falcon — the tools here are the safe, no-execution surface.

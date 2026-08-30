@@ -6,14 +6,12 @@ import type { Request } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { scopeSurface, type ScopedRoute } from "./lib/scopeSurface.js";
+import { scopeSurface } from "./lib/scopeSurface.js";
 import { sealEvidence, verifyLedger, type Auditor } from "./lib/ledger.js";
-import { auditFinding, type Probe } from "./lib/auditor.js";
+import { auditFinding } from "./lib/auditor.js";
 import { makeOpenRouterCall } from "./lib/openrouter.js";
 import { canonicalJson } from "./lib/canonicalJson.js";
-import { staticAdvisory, type Advisory } from "./lib/advisory.js";
-import { executeProbe } from "./lib/audit.js";
-import { deriveVerdict, type Verdict } from "./lib/verdict.js";
+import { staticAdvisory } from "./lib/advisory.js";
 import { suggestGuard } from "./lib/suggestGuard.js";
 import { getStorePaths, getStores } from "./storage/factory.js";
 
@@ -149,54 +147,11 @@ function buildServer(): McpServer {
 
   server.tool(
     "audit_change",
-    "Audit the access-control impact of a code change. Scopes the new endpoints from the unified `diff` and returns a STATIC ADVISORY for any new endpoint with no auth middleware (instant, no sandbox). If you also pass a running `target_base_url` + `probes` (each a request to a new route with an auth_context + expected deny/allow), it EXECUTES them against the target, derives EXPLOITED/CLEAN/INCONCLUSIVE from the real responses, and — when you pass `seal` — independently audits and seals the proof to the ledger (returns its entry_hash). Use this while coding: write a route, audit it, fix it before the PR.",
-    {
-      diff: z.string().describe("unified diff of the change"),
-      target_base_url: z.string().url().optional().describe("base URL of a running target to probe live, e.g. http://localhost:3000"),
-      probes: z
-        .array(
-          z.object({
-            label: z.string(),
-            auth_context: z.enum(["unauthenticated", "wrong-tenant", "non-admin", "authorized"]),
-            expected: z.enum(["deny", "allow"]),
-            path: z.string(),
-            method: z.string().optional(),
-            headers: z.record(z.string(), z.string()).optional(),
-            body: z.unknown().optional(),
-          }),
-        )
-        .optional(),
-      seal: z
-        .object({ target_repo: z.string(), pr_number: z.number().int().nullish(), route: z.string() })
-        .optional()
-        .describe("if present and the verdict is decisive, seal the proof to the ledger"),
-    },
-    async ({ diff, target_base_url, probes, seal }) => {
+    "Audit the access-control impact of a code change, statically. Scopes the new HTTP endpoints from the unified `diff` and returns a STATIC ADVISORY flagging any new endpoint with no auth middleware detected (instant, no sandbox, no execution). This is a heuristic prompt-to-check, not a proof. EXECUTION-PROVEN exploitation is deliberately NOT done here — running the target belongs in the isolated sandbox (the agent/harness pipeline that boots the app and seals via seal_evidence), never as a host-side probe from this server. Use this while coding: write a route, get the advisory, fix it before the PR.",
+    { diff: z.string().describe("unified diff of the change") },
+    async ({ diff }) => {
       const scope = scopeSurface(diff);
-      const out: {
-        routes: ScopedRoute[];
-        advisory: Advisory[];
-        proof?: { verdict: Verdict; probes: Probe[]; sealed_entry_hash?: string; seal_error?: string };
-      } = { routes: scope.routes, advisory: staticAdvisory(scope.routes) };
-
-      if (target_base_url && probes && probes.length > 0) {
-        const executed = await Promise.all(probes.map((p) => executeProbe(target_base_url, p)));
-        const verdict = deriveVerdict(executed);
-        out.proof = { verdict, probes: executed };
-        if (seal && (verdict === "EXPLOITED" || verdict === "CLEAN")) {
-          try {
-            const sealed = await sealEvidence(
-              { target_repo: seal.target_repo, pr_number: seal.pr_number ?? null, route: seal.route, verdict, probes: executed, approver: null },
-              stores.ledger,
-              stores.artifacts,
-              auditor,
-            );
-            out.proof.sealed_entry_hash = sealed.entry_hash;
-          } catch {
-            out.proof.seal_error = "not sealed — the independent audit did not pass (treat as INCONCLUSIVE)";
-          }
-        }
-      }
+      const out = { routes: scope.routes, advisory: staticAdvisory(scope.routes) };
       return { content: [{ type: "text", text: JSON.stringify(out) }] };
     },
   );
@@ -221,13 +176,18 @@ function buildServer(): McpServer {
 
   server.tool(
     "explain_finding",
-    "Explain a sealed ledger entry in plain language: its verdict, the endpoint, the PR, when it was sealed, and which different-family model independently audited it. Reads the ledger; no model call.",
+    "Explain a sealed ledger entry in plain language: its verdict, the endpoint, the PR, when it was sealed, and which different-family model independently audited it. It first runs the authoritative integrity check (recomputes the chain + re-reads artifact bytes) and refuses to describe anything as sealed if the ledger does not verify — returning integrity_ok:false instead. No model call.",
     { entry_hash: z.string().regex(/^[0-9a-f]{64}$/, "must be a 64-char lowercase hex hash") },
     async ({ entry_hash }) => {
+      // Only trust the ledger contents if the whole chain + artifacts verify (integrity before description).
+      const verification = await verifyLedger(stores.ledger, stores.artifacts);
+      if (!verification.valid) {
+        return { content: [{ type: "text", text: canonicalJson({ integrity_ok: false, broken_at: verification.broken_at }) }] };
+      }
       const rows = await stores.ledger.read();
       const row = rows.find((r) => r.ok && r.entry.entry_hash === entry_hash);
       if (!row || !row.ok) {
-        return { content: [{ type: "text", text: JSON.stringify({ found: false }) }] };
+        return { content: [{ type: "text", text: canonicalJson({ integrity_ok: true, found: false }) }] };
       }
       const e = row.entry;
       const explanation =
@@ -235,18 +195,17 @@ function buildServer(): McpServer {
         (e.pr_number != null ? ` (PR #${e.pr_number})` : "") +
         `. Sealed ${e.ts}. Independently audited by ${e.auditor_model ?? "n/a"} — a different model family than the writer` +
         (e.auditor_reason ? `: ${e.auditor_reason}` : ".");
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              found: true,
-              entry: { verdict: e.verdict, route: e.route, target_repo: e.target_repo, pr_number: e.pr_number, ts: e.ts, auditor_model: e.auditor_model ?? null, entry_hash: e.entry_hash },
-              explanation,
-            }),
-          },
-        ],
+      // The DTO is a summary (not a ledger entry); still emit it through the single canonical serializer.
+      const finding = {
+        verdict: e.verdict,
+        route: e.route,
+        target_repo: e.target_repo,
+        pr_number: e.pr_number,
+        ts: e.ts,
+        auditor_model: e.auditor_model ?? null,
+        entry_hash: e.entry_hash,
       };
+      return { content: [{ type: "text", text: canonicalJson({ integrity_ok: true, found: true, finding, explanation }) }] };
     },
   );
 
