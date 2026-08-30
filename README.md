@@ -22,11 +22,15 @@ One vulnerability class (broken access control on new endpoints), one language (
 
 ## How it uses TrueForge
 
-TrueForge owns the loop; Falcon is the four authored pieces that plug into it:
+TrueForge owns the loop; Falcon is the four authored pieces that plug into it. The **exact agent spec**
+(model + MCP servers + skill + sandbox + approval gating), with reproduction steps and the verified
+live-run evidence, is in [`.agent/TRUEFORGE-AGENT.md`](./.agent/TRUEFORGE-AGENT.md).
 
-- **MCP server (`attesta-mcp`)** — registered over Streamable HTTP, three tools: `scope_surface`
-  (the new attack surface from the diff), `seal_evidence` (audits the finding, then hash-chains it),
-  and `verify_ledger` (recomputes the chain and re-reads the artifact bytes).
+- **MCP server (`attesta-mcp`)** — registered over Streamable HTTP. Three **core** tools:
+  `scope_surface` (the new attack surface from the diff), `seal_evidence` (audits the finding, then
+  hash-chains it), and `verify_ledger` (recomputes the chain and re-reads the artifact bytes) — plus
+  three **as-you-code** tools (`audit_change`, `suggest_guard`, `explain_finding`) for any MCP coding
+  agent ([`attesta-mcp/docs/USING-FALCON-MCP.md`](./attesta-mcp/docs/USING-FALCON-MCP.md)).
 - **`SKILL.md` playbook** — loaded as the agent's operating instructions: scope → clone the PR head
   SHA in the sandbox → boot + health-probe → generate access-control probes → `seal_evidence` → act.
 - **Daytona sandbox** — provisioned by TrueForge; the agent installs Node in-sandbox, boots
@@ -76,7 +80,7 @@ them). `npm start` and `npm run bench` auto-load the root `.env`.
 
 ```bash
 cd attesta-mcp && npm install
-npm run typecheck && npm test        # 43 unit tests
+npm run typecheck && npm test        # 45 unit tests
 npm run bench                        # boots vulnbank ×3/branch, prints the verdict matrix
 npm start                            # (optional) MCP server on :8130 for the dashboard
 ```

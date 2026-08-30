@@ -34,8 +34,10 @@ byte re-verification itself is the `verify_ledger` MCP tool, tested in `../attes
 
 ## Panels
 
-- **Command bar** — pick the vulnbank PR (#3 vuln / #4 safe) and **Run Falcon**.
-- **Live activity** — Scoping → Booting sandbox → Probing → Auditing → Sealing.
+- **Command bar** — pick the vulnbank PR (#3 vuln / #4 safe) and **Replay run** (a faithful replay of
+  a recorded run — the live agent run happens in the TrueForge harness).
+- **Activity (replay)** — Scoping → Booting sandbox → Probing → Auditing → Sealing, labelled as the
+  replay it is.
 - **Evidence** — the captured request (Authorization redacted) and response; the money shot is the
   no-token request returning `200` + every tenant's balances. Shows the independent-auditor chip
   (a *different* model family than the writer).

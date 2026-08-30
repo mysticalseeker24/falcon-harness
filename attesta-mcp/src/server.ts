@@ -20,6 +20,11 @@ import { getStorePaths, getStores } from "./storage/factory.js";
 // by comparing model families at audit time.
 const AUDITOR_MODEL = process.env.AUDITOR_MODEL ?? "z-ai/glm-5.3-flash";
 const WRITER_MODEL = process.env.WRITER_MODEL ?? "deepseek/deepseek-v4-pro-0813";
+// Model for suggest_guard's direct OpenRouter call. Defaults to GPT Sol: it reliably generates the
+// code snippet, whereas the cheap GLM auditor model returns empty content for code-generation prompts
+// (it is tuned for judging, not writing). Override with SUGGEST_MODEL. This is a helper tool with no
+// model-family constraint (unlike the auditor).
+const SUGGEST_MODEL = process.env.SUGGEST_MODEL ?? "openai/gpt-5.6-sol-pro";
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? "";
 const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1";
 
@@ -167,9 +172,9 @@ function buildServer(): McpServer {
     },
     async ({ method, route, framework, note }) => {
       const modelCall = OPENROUTER_API_KEY
-        ? makeOpenRouterCall({ model: WRITER_MODEL, apiKey: OPENROUTER_API_KEY, baseUrl: OPENROUTER_BASE_URL })
+        ? makeOpenRouterCall({ model: SUGGEST_MODEL, apiKey: OPENROUTER_API_KEY, baseUrl: OPENROUTER_BASE_URL })
         : null;
-      const result = await suggestGuard({ method, route, framework, note }, modelCall, WRITER_MODEL);
+      const result = await suggestGuard({ method, route, framework, note }, modelCall, SUGGEST_MODEL);
       return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },
   );

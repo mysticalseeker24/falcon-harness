@@ -62,12 +62,16 @@ false` → the agent boots vulnbank, sends a no-`Authorization` request → `200
 balances → **EXPLOITED**, with the request/response captured. On the **safe** PR (#4): same route,
 `auth_present: true` → no-token `401`, non-admin `403` → **CLEAN**.
 
-**Observed once — manual, not a verified result (2026-08-29):** a single manual run drove the full
-loop against real PR #3 with DeepSeek (fetch → scope → boot → probe → subagent audit → seal →
-verify). Treat this as an **anecdotal observation, not a measured claim** — there is no runnable
-check behind it yet. The repeatable, self-checking verification is **`bench` (PR 10)**, which runs
-all branches ×3 and exits non-zero on any wrong verdict. Do not cite this run as a benchmark or a
-headline number anywhere until `bench` measures it (CONVENTIONS §8).
+**Verified live (2026-08-30):** the full TrueForge → Daytona → exploit → seal loop was driven
+end-to-end against the real PRs — **PR #3 EXPLOITED** (sealed `125ef2e7…`) and **PR #4 CLEAN** (sealed
+`2375e2b4…`) — each provisioning a **real Daytona sandbox** (`sandbox.created`), booting vulnbank at
+the exact head SHA, and passing `verify_ledger` afterward. The merge on the CLEAN path **paused for
+human approval**. The exact agent spec + reproduction steps are in
+[TRUEFORGE-AGENT.md](./TRUEFORGE-AGENT.md).
+
+Discipline unchanged: the **headline number** still comes only from a `bench` run — the repeatable,
+self-checking harness that boots all branches ×3 and exits non-zero on any wrong verdict — never from
+these live runs (CONVENTIONS §8).
 
 ## Scope of PR 4 vs later PRs
 

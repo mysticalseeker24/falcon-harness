@@ -1,13 +1,18 @@
 # attesta-mcp
 
 Falcon's MCP server. Exposes the custom tools the agent uses, over Streamable HTTP (the transport
-confirmed in spike 01). Three tools are planned:
+confirmed in spike 01). The three **core PR-review tools** (all implemented):
 
 | Tool | Status | Purpose |
 |---|---|---|
 | `scope_surface(diff)` | **implemented** | new HTTP routes a PR introduces + whether each has auth |
 | `seal_evidence(finding)` | **implemented** | independently audit (different model family) then append a hash-chained entry + store the artifact |
 | `verify_ledger()` | **implemented** | recompute the chain and re-read artifact bytes |
+
+Plus three **as-you-code** tools for any MCP coding agent — `audit_change(diff)` (static advisory for
+unguarded new endpoints; no execution), `suggest_guard(...)` (proposes the guard to add; uses
+`SUGGEST_MODEL`, default GPT Sol), and `explain_finding(entry_hash)` (explains a sealed entry after
+verifying the chain). See [docs/USING-FALCON-MCP.md](./docs/USING-FALCON-MCP.md).
 
 ## Run
 
@@ -104,6 +109,7 @@ same family, a model error, or a malformed/contradictory model reply all cause t
 Behind `LedgerStore` / `ArtifactStore` interfaces (`src/storage`). The **local filesystem backend
 is the default and the tested path** — a JSON-lines ledger at `ATTESTA_LEDGER_PATH` and
 content-addressed blobs under `ATTESTA_ARTIFACT_DIR` (both under `attesta-mcp/data/`, gitignored).
-The deployed demo swaps in Postgres (ledger) + Cloudflare R2 (artifacts) adapters behind the same
-interfaces when `DATABASE_URL` / `R2_*` are set (follow-up; not wired yet, so nothing unverified is
-presented as working).
+The **deployed backend uses this same filesystem backend on a Render persistent disk** (see
+[`DEPLOY.md`](../DEPLOY.md)), seeded on first boot from `attesta-mcp/seed/`. Postgres (ledger) +
+Cloudflare R2 (artifacts) adapters behind the same interfaces remain a future swap (`DATABASE_URL` /
+`R2_*`), not wired yet — so nothing unverified is presented as working.
