@@ -72,13 +72,18 @@ function extractJson(s: string): string {
   return s.slice(start, end + 1);
 }
 
-// Extract the first NON-EMPTY fenced code block plus any prose that follows it. Returns null when
-// there is no fenced block or the block is empty — a refusal or bare prose is not a suggestion.
+// Extract the first NON-EMPTY fenced code block plus any prose that follows it. Scans every fence
+// (an empty first fence must not stop us finding a later non-empty one). Returns null only when no
+// fenced block has content — a refusal or bare prose is not a suggestion.
 function extractFencedCode(s: string): { code: string; explanation: string } | null {
-  const m = s.match(/```[^\n]*\n([\s\S]*?)```/);
-  if (!m || m.index == null) return null;
-  const code = m[1]?.trim();
-  if (!code) return null;
-  const after = s.slice(m.index + m[0].length).trim();
-  return { code, explanation: after || "Suggested guard — review before applying." };
+  const re = /```[^\n]*\n([\s\S]*?)```/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) !== null) {
+    const code = m[1]?.trim();
+    if (code) {
+      const after = s.slice(m.index + m[0].length).trim();
+      return { code, explanation: after || "Suggested guard — review before applying." };
+    }
+  }
+  return null;
 }

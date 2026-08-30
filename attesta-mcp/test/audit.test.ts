@@ -59,6 +59,12 @@ test("suggestGuard: an empty fenced block is rejected", async () => {
   assert.equal(r.available, false);
 });
 
+test("suggestGuard: an empty fence followed by a non-empty fence uses the non-empty one", async () => {
+  const r = await suggestGuard(REQ, modelReturning("```\n\n```\n```ts\nrouter.use(requireAuth);\n```\nGuards the route."), "m");
+  assert.equal(r.available, true);
+  assert.match(r.suggestion ?? "", /requireAuth/);
+});
+
 test("suggestGuard: no configured model (null) is rejected as not-configured", async () => {
   const r = await suggestGuard(REQ, null, "m");
   assert.equal(r.available, false);

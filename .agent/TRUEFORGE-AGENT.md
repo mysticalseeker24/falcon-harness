@@ -21,7 +21,7 @@ TrueForge configures the agent **inline per session** (there is no separate "age
     {
       "name": "github",
       "enable_tools": ["pull_request_read", "add_issue_comment", "merge_pull_request"],
-      "require_approval_for_tools": ["@write", "@destructive"],
+      "require_approval_for_tools": ["merge_pull_request"],
       "preload": true
     },
     {
@@ -48,7 +48,7 @@ TrueForge configures the agent **inline per session** (there is no separate "age
 | Field | Value | Why |
 |---|---|---|
 | `model.name` | `openrouter/deepseekv4-pro` | The **writer** (main agent). Registered in TrueForge → maps to OpenRouter `deepseek/deepseek-v4-pro-0813:exacto`. The independent audit runs on a **different family** (GLM) inside `seal_evidence`, so this model can never rubber-stamp itself. |
-| `mcp_servers[github]` | `enable_tools: [pull_request_read, add_issue_comment, merge_pull_request]` | The full workflow needs to **read** the PR + diff, **comment** the proof on an EXPLOITED finding, and **merge** on an approved CLEAN one. **Writes are gated:** `require_approval_for_tools: ["@write","@destructive"]` puts the comment *and* the merge behind human approval — the merge is the control-safety gate. (Headless *report-only* test runs restrict this to `pull_request_read`, since they neither comment nor merge.) |
+| `mcp_servers[github]` | `enable_tools: [pull_request_read, add_issue_comment, merge_pull_request]` | The full workflow needs to **read** the PR + diff, **comment** the proof on an EXPLOITED finding, and **merge** on an approved CLEAN one. **Only the merge is gated:** `require_approval_for_tools: ["merge_pull_request"]` — the EXPLOITED path posts its proof **comment autonomously** (no approval), while the merge waits for a human (the control-safety gate; [`GATE.md`](./GATE.md)). (Headless *report-only* test runs restrict this to `pull_request_read`.) |
 | `mcp_servers[attesta-mcp]` | `enable_tools: [@all]` | Our MCP server: `scope_surface`, `seal_evidence`, `verify_ledger` (+ the as-you-code tools). Its writes are also approval-eligible, but `seal_evidence` is the audited seal, so sealing is not blocked in practice. |
 | `skills` | `diff-scoped-broken-access-control` | Our [`SKILL.md`](../SKILL.md) playbook — the method the agent follows (scope → boot → probe → verdict → seal → act). |
 | `config.sandbox.enabled` | `true` | TrueForge provisions a **Daytona** sandbox for the run. The skill installs Node in it (the base image ships none) and boots vulnbank there — the target never runs on the host. |
