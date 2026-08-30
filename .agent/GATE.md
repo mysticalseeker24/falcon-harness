@@ -46,7 +46,10 @@ irreversible merge without a matching APPROVAL entry. On reject/deny → no seal
 - **Verified now (unit-tested in attesta-mcp):** `seal_evidence` APPROVAL entries — an approval
   links `approver` + the `approves_entry_hash` of a prior CLEAN finding for the same repo+PR, carries
   no HTTP artifact, and the chain still verifies. Referential + hash-shape validation is enforced.
-- **Planned, implemented + verified in PR 9 (the dashboard/approval handler):** the full
-  pause → seal → resume → merge sequence, including the trusted-identity derivation and the
-  seal-before-resume ordering above. **It is not yet demonstrated end-to-end here** — do not claim
-  the live allow→merge→seal flow runs until PR 9 wires and tests it.
+- **Designed, not shipped as an automated handler:** the full pause → seal → resume → merge
+  sequence, including the trusted-identity derivation and the seal-before-resume ordering above. The
+  dashboard ships **Approve as a labelled replay** of this decision (it records the choice; it does
+  not itself derive an authenticated approver, seal, or resume the merge). Both primitives it would
+  compose are proven — the SDK approval round-trip (spike 03) and `seal_evidence` APPROVAL entries
+  (unit-tested) — but the end-to-end authenticated handler that wires them together is the documented
+  design here, not a running integration. **Do not claim the live allow → merge → seal flow runs.**
