@@ -41,3 +41,17 @@ The run is a faithful **replay** of a real Falcon run (reliable for the demo), d
 `lib/demo.ts` (the actual captured evidence). The ledger/verify/tamper are **live** against
 `attesta-mcp`. A live TrueForge run adapter (streaming a real session) can be layered on the same
 `RunState` model.
+
+## Notes — safe demos & the road to production
+
+- **Isolate the tamper demo from canonical evidence.** The Tamper button mutates the ledger file
+  attesta-mcp is configured with (backing it up and offering Restore). For demos, run attesta-mcp
+  with a **dedicated demo ledger** so tampering can never touch a real evidence ledger:
+  `ATTESTA_LEDGER_PATH=./data/demo-ledger.jsonl npm start` (from `../attesta-mcp`), and point
+  `ATTESTA_LEDGER_PATH` here at the same file. `Verify chain` stays a real, live trust boundary
+  (attesta re-reads the bytes) regardless.
+- **Toward production** (not needed for the demo): replace the replay timing with an
+  **authenticated live TrueForge run** streamed over the SDK, and resolve the approval through the
+  real `tool.approval_required` → `user.tool_approval` flow (GATE.md) with the approver derived from
+  the dashboard's authenticated session — rather than the local replay timing + local approval
+  resolution used here for a deterministic demo surface.
