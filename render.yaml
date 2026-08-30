@@ -26,6 +26,8 @@ services:
         value: deepseek/deepseek-v4-pro-0813
       - key: OPENROUTER_API_KEY
         sync: false # set this in the Render dashboard; never commit it
+      - key: ATTESTA_MCP_TOKEN
+        generateValue: true # bearer token that gates /mcp (the only mutation surface); reads stay public
     disk:
       name: attesta-data
       mountPath: /data

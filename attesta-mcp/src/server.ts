@@ -1,6 +1,8 @@
 import { existsSync, promises as fs } from "node:fs";
 import path from "node:path";
+import { timingSafeEqual } from "node:crypto";
 import express from "express";
+import type { Request } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
@@ -8,6 +10,7 @@ import { scopeSurface } from "./lib/scopeSurface.js";
 import { sealEvidence, verifyLedger, type Auditor, type LedgerEntry } from "./lib/ledger.js";
 import { auditFinding } from "./lib/auditor.js";
 import { makeOpenRouterCall } from "./lib/openrouter.js";
+import { canonicalJson } from "./lib/canonicalJson.js";
 import { getStorePaths, getStores } from "./storage/factory.js";
 
 // The independent auditor runs on a DIFFERENT model family than the main agent (the writer). Default
@@ -54,6 +57,20 @@ const probeSchema = z.object({
 // when a platform PORT is present (the host provides the network boundary + TLS), loopback otherwise.
 const PORT = Number(process.env.ATTESTA_MCP_PORT ?? process.env.PORT ?? 8130);
 const HOST = process.env.ATTESTA_MCP_HOST ?? (process.env.PORT ? "0.0.0.0" : "127.0.0.1");
+
+// The MCP endpoint is the only mutation surface (seal_evidence spends the OpenRouter account and
+// writes the ledger; APPROVAL trusts its `approver`). When ATTESTA_MCP_TOKEN is set (required for any
+// public deploy), every /mcp call must present it as a bearer token — reads stay public via the
+// GET /ledger and GET /verify endpoints, which need no secret. Unset ⇒ open, for loopback dev only.
+const MCP_TOKEN = process.env.ATTESTA_MCP_TOKEN ?? "";
+function mcpAuthorized(req: Request): boolean {
+  if (!MCP_TOKEN) return true;
+  const presented = req.header("authorization") ?? "";
+  const expected = `Bearer ${MCP_TOKEN}`;
+  const a = Buffer.from(presented);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 // Await both closes and log any failure, so cleanup can never become an unhandled rejection.
 async function closeQuietly(transport: StreamableHTTPServerTransport, server: McpServer): Promise<void> {
@@ -133,6 +150,10 @@ const app = express();
 app.use(express.json({ limit: "4mb" }));
 
 app.post("/mcp", async (req, res) => {
+  if (!mcpAuthorized(req)) {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
   const server = buildServer();
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   res.on("close", () => {
@@ -173,10 +194,24 @@ app.get("/ledger", async (_req, res) => {
         ? entryToView(r.entry)
         : { id: `row-${i}`, verdict: "CORRUPT", route: null, pr_number: null, auditor_model: null, entry_hash: "—", prev_hash: "—", ts: "" },
     );
-    res.json({ entries });
+    // Serialize through the single canonical serializer (CONVENTIONS §5) rather than a second
+    // framework stringify, so every JSON emission of ledger data goes through one contract.
+    res.type("application/json").send(canonicalJson({ entries }));
   } catch (err) {
     console.error("/ledger read failed:", err);
     res.status(500).json({ error: "ledger read failed" });
+  }
+});
+
+// Public, read-only verification: recompute the chain + re-hash artifact bytes (the same authoritative
+// check as the verify_ledger tool). Lets the dashboard verify live without holding the write token.
+app.get("/verify", async (_req, res) => {
+  try {
+    const result = await verifyLedger(stores.ledger, stores.artifacts);
+    res.json(result);
+  } catch (err) {
+    console.error("/verify failed:", err);
+    res.status(500).json({ error: "verify failed" });
   }
 });
 

@@ -11,8 +11,10 @@ const LEDGER_PATH = path.resolve(
 );
 const MCP_URL = process.env.ATTESTA_MCP_URL ?? "http://127.0.0.1:8130/mcp";
 // In a split deploy (dashboard on Vercel, attesta-mcp on Render) there is no shared filesystem, so
-// entries are read from the backend's read-only /ledger endpoint instead of the local file.
+// entries are read from the backend's read-only /ledger endpoint, and verification from its public
+// read-only /verify endpoint — neither needs the write token that gates /mcp.
 const LEDGER_URL = process.env.ATTESTA_LEDGER_URL ?? "";
+const VERIFY_URL = process.env.ATTESTA_VERIFY_URL ?? "";
 const VERIFY_TIMEOUT_MS = 15_000;
 const LEDGER_READ_TIMEOUT_MS = 10_000;
 
@@ -130,6 +132,17 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 // Ask attesta-mcp (it recomputes the chain AND re-reads artifact bytes). Bounded end-to-end so a
 // hung MCP server surfaces as a verification failure the console can show — never a pending request.
 export async function verifyLedger(): Promise<VerifyResult> {
+  // Split deploy: verify over the backend's public read-only endpoint (same authoritative check).
+  if (VERIFY_URL) {
+    const res = await fetch(VERIFY_URL, { cache: "no-store", signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS) });
+    if (!res.ok) throw new Error(`verify endpoint HTTP ${res.status}`);
+    const parsed = (await res.json()) as Partial<VerifyResult>;
+    if (typeof parsed.valid !== "boolean" || typeof parsed.length !== "number") {
+      throw new Error("verify endpoint returned an unrecognized result shape");
+    }
+    return { valid: parsed.valid, length: parsed.length, broken_at: parsed.broken_at ?? null };
+  }
+
   const client = new Client({ name: "falcon-dashboard", version: "0.1.0" });
   const transport = new StreamableHTTPClientTransport(new URL(MCP_URL));
   try {
