@@ -10,7 +10,11 @@ const LEDGER_PATH = path.resolve(
   /* turbopackIgnore: true */ process.env.ATTESTA_LEDGER_PATH ?? "../attesta-mcp/data/ledger.jsonl",
 );
 const MCP_URL = process.env.ATTESTA_MCP_URL ?? "http://127.0.0.1:8130/mcp";
+// In a split deploy (dashboard on Vercel, attesta-mcp on Render) there is no shared filesystem, so
+// entries are read from the backend's read-only /ledger endpoint instead of the local file.
+const LEDGER_URL = process.env.ATTESTA_LEDGER_URL ?? "";
 const VERIFY_TIMEOUT_MS = 15_000;
+const LEDGER_READ_TIMEOUT_MS = 10_000;
 
 // A demo mutation (Tamper/Restore) is destructive, so it is disabled unless the operator explicitly
 // opts in AND points the console at a ledger whose name marks it as a throwaway demo copy — never
@@ -71,6 +75,9 @@ function toView(parsed: unknown, index: number): LedgerEntryView {
 }
 
 export async function readLedger(): Promise<LedgerEntryView[]> {
+  // Split deploy: read entries over HTTP from the backend (which validates + maps them).
+  if (LEDGER_URL) return readLedgerRemote();
+
   let text: string;
   try {
     text = await fs.readFile(LEDGER_PATH, "utf8");
@@ -91,6 +98,15 @@ export async function readLedger(): Promise<LedgerEntryView[]> {
     out.push(toView(parsed, out.length));
   }
   return out;
+}
+
+async function readLedgerRemote(): Promise<LedgerEntryView[]> {
+  const res = await fetch(LEDGER_URL, { cache: "no-store", signal: AbortSignal.timeout(LEDGER_READ_TIMEOUT_MS) });
+  if (!res.ok) throw new Error(`ledger endpoint HTTP ${res.status}`);
+  const data = (await res.json()) as { entries?: unknown };
+  if (!Array.isArray(data.entries)) throw new Error("ledger endpoint returned no entries array");
+  // Re-validate every row through the same view mapper — never trust the shape off the wire.
+  return data.entries.map((e, i) => toView(e, i));
 }
 
 // ---- authoritative verification (bounded) --------------------------------------------------------

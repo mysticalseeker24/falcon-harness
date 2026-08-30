@@ -1,0 +1,58 @@
+# Deploying Falcon
+
+A split deploy: **attesta-mcp → Render** (the backend: MCP tools + a read-only ledger endpoint, with
+a persistent disk), **dashboard → Vercel** (the console). The dashboard reads entries and runs
+**Verify live** over MCP against Render — no shared filesystem, no secrets in the frontend.
+
+```
+┌─────────────── Vercel ───────────────┐        ┌────────────── Render ──────────────┐
+│  dashboard (Next.js)                  │        │  attesta-mcp (Express)             │
+│   • lists entries  ── GET /ledger ───────────► │   • GET  /ledger  (read-only)      │
+│   • Verify chain   ── POST /mcp ─────────────► │   • POST /mcp     (verify_ledger)  │
+│   • Tamper/Restore: OFF in prod       │        │   • persistent disk /data          │
+└───────────────────────────────────────┘        │   • seeds from seed/ on first boot │
+                                                  └────────────────────────────────────┘
+```
+
+## 1 · Backend — Render (do this first; the frontend needs its URL)
+
+1. **New → Blueprint**, pick this repo. Render reads [`render.yaml`](./render.yaml) and provisions the
+   `attesta-mcp` web service **plus a 1 GB persistent disk** mounted at `/data`.
+2. Set the one secret: **`OPENROUTER_API_KEY`** (Environment tab). It powers the in-seal auditor; the
+   ledger reads/verifies work without it, but new seals won't.
+3. Deploy. When it's live, copy the service URL, e.g. `https://attesta-mcp-xxxx.onrender.com`.
+4. **Verify the backend:**
+   ```bash
+   curl https://attesta-mcp-xxxx.onrender.com/health     # {"ok":true}
+   curl https://attesta-mcp-xxxx.onrender.com/ledger      # the 2 seeded entries (EXPLOITED + CLEAN)
+   ```
+   The disk seeds itself from the committed [`attesta-mcp/seed/`](./attesta-mcp/seed) on first boot
+   (real, audited, hash-chained entries — not fixtures). It never overwrites an existing ledger.
+
+## 2 · Frontend — Vercel
+
+1. **New Project → import this repo → set Root Directory to `dashboard`.** Vercel detects Next.js;
+   the default build (`next build`) is correct.
+2. Set two environment variables (Production), using the Render URL from step 1:
+   ```
+   ATTESTA_MCP_URL     = https://attesta-mcp-xxxx.onrender.com/mcp
+   ATTESTA_LEDGER_URL  = https://attesta-mcp-xxxx.onrender.com/ledger
+   ```
+   Leave **`ATTESTA_DEMO` unset** — Tamper/Restore stay disabled on the public instance (they are
+   destructive by nature; keep that demo local, see the dashboard README).
+3. Deploy and open the URL. The ledger panel shows the two seeded entries; **Verify chain** turns
+   green by talking live to Render. **Run Falcon** is the replay walkthrough; its hash reconciles
+   against the live ledger and is labelled accordingly.
+
+## Notes
+
+- **Costs / uptime:** the persistent disk requires a Starter+ Render plan (the free tier has no disk
+  and spins down). Vercel's Hobby/Pro both work.
+- **Re-seeding:** the seed only fills an *empty* ledger. To reset the demo, clear the Render disk (or
+  the `/data` files) and redeploy, or run `npm run seed` locally and commit a new `seed/`.
+- **The tamper demo** (mutate a row → Verify catches it → Restore) runs locally with
+  `ATTESTA_DEMO=1` against a `*demo*`-named ledger — see [`dashboard/README.md`](./dashboard/README.md).
+  It is intentionally not exposed on the public deploy.
+- **What's *not* deployed:** the full TrueForge agent run (loop + Daytona sandbox + GitHub merge gate)
+  runs in the harness under WSL2 — see [`.agent/SPINE.md`](./.agent/SPINE.md). The deploy is the
+  evidence surface + the live, verifiable ledger.

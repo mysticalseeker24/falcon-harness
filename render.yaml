@@ -1,0 +1,32 @@
+# Render Blueprint for attesta-mcp — the Falcon backend (MCP tools + read-only /ledger).
+# Deploy: Render dashboard → New → Blueprint → pick this repo. Render reads this file, creates the
+# service + persistent disk, then you set OPENROUTER_API_KEY (marked sync:false) in the dashboard.
+# Render injects PORT; the server honors it and binds 0.0.0.0. The disk survives redeploys, so the
+# ledger persists; on first boot the server seeds it from the committed attesta-mcp/seed/.
+services:
+  - type: web
+    name: attesta-mcp
+    runtime: node
+    rootDir: attesta-mcp
+    plan: starter # Starter+ is required for the persistent disk; bump if you need more
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ATTESTA_MCP_HOST
+        value: 0.0.0.0
+      - key: ATTESTA_LEDGER_PATH
+        value: /data/ledger.jsonl
+      - key: ATTESTA_ARTIFACT_DIR
+        value: /data/artifacts
+      - key: AUDITOR_MODEL
+        value: z-ai/glm-5.3-flash
+      - key: WRITER_MODEL
+        value: deepseek/deepseek-v4-pro-0813
+      - key: OPENROUTER_API_KEY
+        sync: false # set this in the Render dashboard; never commit it
+    disk:
+      name: attesta-data
+      mountPath: /data
+      sizeGB: 1
