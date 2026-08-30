@@ -20,6 +20,26 @@ Built for the TrueForge Agent Harness Hackathon (TrueForge + Qodo). TrueForge ow
 
 One vulnerability class (broken access control on new endpoints), one language (JS/TS via Express), regex-based diff scoping, no reachability pruning. Deliberately narrow, done provably.
 
+## The target — `vulnbank`
+
+Falcon needs a **legal, controlled, reproducible** thing to exploit, so we built one:
+[**DevLab-mgc/vulnbank**](https://github.com/DevLab-mgc/vulnbank) — a small multi-tenant "bank" API
+(Express 5 + TypeScript) that is the **only** target Falcon is ever pointed at. It is deliberately
+hardened so that **only the intentionally-planted flaw is exploitable** — every other route enforces
+authentication, role, and tenant isolation correctly. That matters: it means an `EXPLOITED` verdict is
+a real finding on a real bug, not noise, and a `CLEAN` verdict is meaningful.
+
+The demo runs on two pull requests against it, which are the whole point of a *diff-scoped* agent:
+
+| PR | Branch | The change | Correct verdict |
+|---|---|---|---|
+| **#3** | `pr/admin-balances-vuln` | adds `GET /admin/balances` **with no auth middleware** — it returns every tenant's balances to anyone | **EXPLOITED** |
+| **#4** | `pr/admin-balances-safe` | adds the same route **guarded** (`requireAuth` + admin role) | **CLEAN** |
+
+Same endpoint, one line of difference — Falcon tells them apart by *executing* the exploit, not by
+reading the code. (The fixture ships its own Qodo config; note that Qodo may still flag vulnbank's
+*intentional* vuln — that's expected, it's a deliberately-vulnerable fixture.)
+
 ## How it uses TrueForge
 
 TrueForge owns the loop; Falcon is the four authored pieces that plug into it. The **exact agent spec**
@@ -93,8 +113,60 @@ cp .env.example .env.local           # point at attesta-mcp's ledger + MCP url
 npm run dev                          # http://localhost:3000
 ```
 
-**The full agent run** — run TrueForge (under WSL2), register `attesta-mcp` as a custom MCP server,
-import `SKILL.md` at the repo root, and point it at a `vulnbank` PR. The step-by-step is in
+### The full agent run — locally, end to end
+
+This is Falcon actually working: **TrueForge drives the loop, provisions a Daytona sandbox, runs the
+exploit, and pauses for approval.** It runs entirely on your machine — a hosted product isn't required.
+On Windows, do all of this **under WSL2** (a native-Windows ESM path bug crashes TrueForge). The exact
+agent configuration is in [`.agent/TRUEFORGE-AGENT.md`](./.agent/TRUEFORGE-AGENT.md); the ordered setup:
+
+**1 · Start `attesta-mcp` (with the auditor key)** — from `attesta-mcp/`:
+
+```bash
+npm install
+npm start                            # loads ../.env → http://localhost:8130/mcp
+curl localhost:8130/health           # expect {"ok":true}
+```
+
+It needs `OPENROUTER_API_KEY` in the root `.env` (the in-seal audit runs on a different model family).
+
+**2 · Start TrueForge** (WSL2, Node 24):
+
+```bash
+npx --yes @truefoundry/trueforge     # UI on http://localhost:8790
+```
+
+**3 · Register the models** (TrueForge → Models): writer `openrouter/deepseekv4-pro` and the
+auditor-family `openrouter/glm5.3-flash`, both via OpenRouter.
+
+**4 · Register the connectors** (TrueForge → Connectors):
+- **attesta-mcp** — *Add MCP Server* → `http://localhost:8130/mcp` (enable all its tools).
+- **GitHub** — a fine-grained token scoped to `DevLab-mgc/vulnbank`, least-privilege: *Pull requests*
+  read, *Contents* read/write (merge), *Issues* read/write (PR comments), *Metadata* read. Store the
+  token in the harness — **never in the repo**.
+
+**5 · Import the skill** (TrueForge → Skills → *Import from GitHub*): repo
+`mysticalseeker24/falcon-harness`, **`path` left empty** (repo root — `SKILL.md` is at the root),
+ref `main`. ⚠️ A wrong path makes the git-skill install fail, which **breaks the whole sandbox**.
+
+**6 · Gate the merge** — mark the GitHub **merge** tool as approval-required (require approval for
+`@write`). This is what makes the harness stop for a human on the CLEAN path.
+
+**7 · Sandbox** — Daytona is the provider; confirm it shows **ready**. (The base image ships no Node;
+the skill installs it in-sandbox.)
+
+**Run it** — open a TrueForge chat and paste:
+
+> Following your skill, review `DevLab-mgc/vulnbank` PR #3 for broken access control: scope the new
+> surface, boot vulnbank in the sandbox, run your probe, and give the verdict with the captured
+> request and response.
+
+Expected: a **Daytona sandbox is created** → vulnbank boots → unauthenticated `GET /admin/balances` →
+`200` + every tenant's balances → **EXPLOITED**, sealed. Then try **PR #4** for the **CLEAN** path — it
+proposes the merge and **pauses for your approval**.
+
+**Watch it land:** the dashboard's ledger panel (the console block above, pointed at local `:8130`)
+shows the freshly-sealed entry, and **Verify chain** re-reads the bytes. Full walkthrough:
 [`.agent/SPINE.md`](./.agent/SPINE.md).
 
 ## `npm run bench`
@@ -135,19 +207,40 @@ safe       3    CLEAN        CLEAN        ok     sealed+verified   PASS
 
 ## Qodo Code Review Evidence
 
-Every substantive change shipped as its own branch, reviewed by Qodo, findings resolved, then merged —
-the trail of small resolved PRs is itself a deliverable. Selected reviews:
+**Every substantive change shipped as its own branch, reviewed by Qodo, with findings resolved before
+merge — the trail of small, reviewed, resolved PRs is itself a graded deliverable (the Q Branch
+track).** Nothing went straight to `main`.
 
-| PR | What Qodo surfaced | What changed |
-|---|---|---|
-| [#13 — dashboard](https://github.com/mysticalseeker24/falcon-harness/pull/13) | 13 compliance findings: unbounded `verify_ledger`, silently-swallowed HTTP/exception failures, destructive tamper/restore exposed to any caller, corrupt rows crashing hash rendering, and `Run Falcon`/`Approve` overclaiming a seal/merge | Finite-timeout verify; status-checked API with server-side logging + generic client errors; `ATTESTA_DEMO`-gated, atomic, backup-once tamper; safe `CORRUPT` view model; honest replay labelling reconciled against the live ledger |
-| [#9 — auditor](https://github.com/mysticalseeker24/falcon-harness/pull/9) | 9 findings on the independent auditor: forgeable pass boolean, same-family risk, unredacted evidence to the model | Moved the audit *inside* `seal_evidence`; enforced a different model family; deterministic gate the model can only veto; redact-before-model |
-| [#5 — MCP ledger tools](https://github.com/mysticalseeker24/falcon-harness/pull/5) | 7 findings on `scope_surface` / hashing: auth detection from non-middleware args, unanchored route regex, canonicalization edge cases | One canonical serializer; anchored extraction; `__proto__`-as-data hashing |
-| [#11 — bench](https://github.com/mysticalseeker24/falcon-harness/pull/11) | 7 findings: mutable branch refs, CLEAN accepted on bare 2xx, configured-not-measured metrics, raw stack traces | Pinned immutable SHAs + recorded artifact; CLEAN needs proven balances; measured metrics; redacted internal error log |
+**The loop, for every PR:**
 
-**Follow-up review against final code:** each fix commit was re-reviewed by Qodo on the same PR before
-merge, and CI ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) runs both workspaces'
-typecheck + test suites on every PR and push to `main`.
+1. Open a scoped branch → **Qodo reviews it automatically** and posts findings (bug / security / compliance / rule-violation, by severity).
+2. **Resolve** each finding in a follow-up commit — or dismiss it with a written reason in the thread.
+3. **Qodo re-reviews the fix commit** on the same PR, and re-flags anything a first fix missed (this caught real second-order bugs — see the deep-dive).
+4. **CI** ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) runs both workspaces' typecheck + test suites on the PR.
+5. **Merge** only when clean.
+
+**The trail — findings surfaced → what changed:**
+
+| PR | Findings | Qodo surfaced | Resolved by |
+|---|---|---|---|
+| [#5 · MCP ledger tools](https://github.com/mysticalseeker24/falcon-harness/pull/5) | 7 | auth detected from non-middleware args; unanchored route regex; canonicalization edge cases | one canonical serializer; anchored extraction; `__proto__`-as-data hashing |
+| [#8 · spine](https://github.com/mysticalseeker24/falcon-harness/pull/8) | 3 | branch-name checkout; over-broad token; an unverified run cited as a result | exact head-SHA checkout (fork-aware); least-privilege per-operation PAT; the run labelled "observed once," not a measured claim |
+| [#9 · auditor](https://github.com/mysticalseeker24/falcon-harness/pull/9) | 9 | forgeable `auditor_ok` boolean; same-family risk; unredacted evidence sent to the model | audit moved *inside* `seal_evidence`; different family enforced; redact-before-model; deterministic veto-only gate |
+| [#11 · bench](https://github.com/mysticalseeker24/falcon-harness/pull/11) | 7 | mutable branch refs; CLEAN accepted on a bare 2xx; configured-not-measured metrics; raw stack traces | pinned immutable SHAs + recorded artifact; CLEAN needs proven data; measured metrics; redacted internal log |
+| [#13 · dashboard](https://github.com/mysticalseeker24/falcon-harness/pull/13) | 13 | unbounded `verify_ledger`; silently-swallowed failures; destructive endpoints exposed to any caller; corrupt rows crashing render; `Run`/`Approve` overclaiming a seal/merge | finite-timeout verify; status-checked API + generic errors; `ATTESTA_DEMO`-gated atomic tamper; safe `CORRUPT` model; honest replay labelling |
+| [#15 · deploy](https://github.com/mysticalseeker24/falcon-harness/pull/15) | 4 (+2 re-flagged) | destructive `/mcp` unauthenticated; non-transactional seed publish; `/ledger` bypassing the canonical serializer | token-gated mutation surface; **transactional + recoverable** seed; single canonical serializer on the wire (deep-dive ↓) |
+| [#16 · as-you-code tools](https://github.com/mysticalseeker24/falcon-harness/pull/16) | 9 | host-side probing outside the sandbox (an SSRF primitive); loose verdict semantics | **removed the host-execution surface entirely** — the principled fix, matching Falcon's own "the sandbox is the boundary" thesis |
+| [#17 · dashboard UI](https://github.com/mysticalseeker24/falcon-harness/pull/17) | 2 (+1 re-flagged) | "data leaked" inferred from HTTP status alone; masthead/badge overclaiming a live run | label from the *verified verdict*; honest masthead + a real ledger-live signal; the run clearly marked a replay |
+
+That's **50+ findings resolved** across the reviewed PRs, every one fixed or dismissed with a written reason.
+
+**Deep-dive — the loop catching a second-order bug (PR #15).** Qodo's first pass flagged that seed
+publication wasn't transactional; we fixed it — and Qodo's **re-review re-flagged it**: our fix still
+wrote the ledger *before* copying the artifacts it references, so a crash mid-copy would leave an
+invalid chain that every later boot would silently accept. The real fix was to copy artifacts **first**,
+commit the ledger marker **last** via an atomic rename, add a recovery path, and route the `/ledger`
+response through the *single* canonical serializer rather than a second `JSON.stringify`. That is the
+review loop doing exactly its job — catching the bug the first fix missed.
 
 ---
 
