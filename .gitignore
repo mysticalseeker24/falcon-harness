@@ -27,6 +27,9 @@ db.sqlite
 # attesta-mcp local ledger + artifact store (runtime data)
 attesta-mcp/data/
 
+# bench: keep the committed result artifact (latest.json), never the internal error log
+attesta-mcp/bench-results/bench-error.log
+
 # OS / editor
 .DS_Store
 Thumbs.db
